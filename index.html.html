@@ -1,0 +1,1140 @@
+<!DOCTYPE html>
+<html lang="ja">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>シフト管理表</title>
+<link href="https://fonts.googleapis.com/css2?family=Noto+Sans+JP:wght@300;400;500;700&family=DM+Mono:wght@400;500&display=swap" rel="stylesheet">
+<style>
+:root{
+  --bg:#0f1117;--surface:#1a1d27;--surface2:#22263a;--border:#2e3250;
+  --text:#e8eaf6;--muted:#7986cb;--accent:#5c6bc0;--accent2:#7986cb;
+  --sat:#4fc3f7;--sun:#ef5350;--hol:#f48fb1;--event:#ffd54f;--green:#66bb6a;
+}
+*{box-sizing:border-box;margin:0;padding:0;}
+body{font-family:'Noto Sans JP',sans-serif;background:var(--bg);color:var(--text);min-height:100vh;padding:14px;}
+
+/* ヘッダー */
+.app-header{display:flex;align-items:center;justify-content:space-between;margin-bottom:10px;flex-wrap:wrap;gap:8px;}
+.app-title{font-size:1.2rem;font-weight:700;}
+.controls{display:flex;align-items:center;gap:6px;flex-wrap:wrap;}
+/* ヘッダー中央の月度バッジ */
+.header-month-badge{
+  display:flex;align-items:center;gap:5px;
+  background:rgba(239,83,80,.12);border:1px solid rgba(239,83,80,.4);
+  border-radius:8px;padding:4px 14px;
+  font-family:'DM Mono',monospace;
+}
+.header-month-badge .hm-num{font-size:1.5rem;font-weight:700;color:#ef5350;line-height:1;}
+.header-month-badge .hm-unit{font-size:0.72rem;color:#ef9a9a;font-weight:600;line-height:1;}
+.header-month-badge .hm-hol{font-size:0.64rem;color:rgba(239,154,154,.8);white-space:nowrap;margin-left:2px;}
+.btn{background:var(--surface2);border:1px solid var(--border);color:var(--text);padding:5px 11px;border-radius:6px;cursor:pointer;font-family:inherit;font-size:0.78rem;transition:all .15s;white-space:nowrap;}
+.btn:hover{background:var(--accent);border-color:var(--accent);}
+.btn.primary{background:var(--accent);border-color:var(--accent);}
+.btn.info{background:rgba(255,213,79,.15);border-color:rgba(255,213,79,.4);color:var(--event);}
+.btn.info:hover{background:rgba(255,213,79,.3);}
+.period-label{font-size:0.88rem;font-weight:600;color:var(--accent2);font-family:'DM Mono',monospace;min-width:144px;text-align:center;}
+
+/* スタッフ追加バー */
+.staff-bar{display:flex;gap:6px;margin-bottom:8px;flex-wrap:wrap;align-items:center;background:var(--surface);border:1px solid var(--border);border-radius:8px;padding:7px 11px;}
+.staff-bar label{font-size:0.76rem;color:var(--muted);}
+.inp{background:var(--surface2);border:1px solid var(--border);color:var(--text);padding:4px 8px;border-radius:5px;font-family:inherit;font-size:0.78rem;}
+.inp::placeholder{color:var(--muted);}
+select.inp{cursor:pointer;}
+
+/* 凡例 */
+.legend{display:flex;gap:8px;margin-bottom:8px;flex-wrap:wrap;align-items:center;font-size:0.7rem;}
+.leg{display:flex;align-items:center;gap:3px;}
+.leg-dot{width:10px;height:10px;border-radius:2px;flex-shrink:0;}
+
+/* テーブルラッパー */
+.table-wrapper{overflow-x:auto;border-radius:10px;border:1px solid var(--border);background:var(--surface);max-height:55vh;overflow-y:auto;}
+table{border-collapse:collapse;min-width:100%;font-size:0.74rem;}
+
+thead th{position:sticky;top:0;z-index:10;background:#1e2235;border-bottom:2px solid var(--border);padding:4px 2px;text-align:center;white-space:nowrap;}
+
+/*
+  固定左列 left:
+  name:76, zoku:62, role:62, yomikomi:50,
+  kyukei:38, zankyukei:48, soro:58, zangyou:58, rest:72
+  合計: 524px
+*/
+.col-name     {position:sticky;left:0px;  z-index:5;background:var(--surface2);min-width:76px;max-width:82px;border-right:1px solid var(--border);font-weight:500;padding:3px 4px;}
+.col-zoku     {position:sticky;left:76px; z-index:5;background:var(--surface2);min-width:62px;border-right:1px solid var(--border);text-align:center;font-size:0.68rem;}
+.col-role     {position:sticky;left:138px;z-index:5;background:var(--surface2);min-width:62px;border-right:1px solid var(--border);text-align:center;font-size:0.68rem;}
+.col-yomikomi {position:sticky;left:200px;z-index:5;background:var(--surface2);min-width:50px;border-right:1px solid var(--border);text-align:center;font-size:0.66rem;cursor:pointer;}
+.col-yomikomi:hover{background:#2a2e45!important;}
+.col-kyukei   {position:sticky;left:250px;z-index:5;background:var(--surface2);min-width:38px;border-right:1px solid var(--border);text-align:center;color:var(--green);font-family:'DM Mono',monospace;font-size:0.7rem;}
+.col-zankyukei{position:sticky;left:288px;z-index:5;background:var(--surface2);min-width:48px;border-right:1px solid var(--border);text-align:center;font-family:'DM Mono',monospace;font-size:0.7rem;}
+.col-soro     {position:sticky;left:336px;z-index:5;background:var(--surface2);min-width:58px;border-right:1px solid var(--border);text-align:center;font-family:'DM Mono',monospace;font-size:0.7rem;}
+.col-zangyou  {position:sticky;left:394px;z-index:5;background:var(--surface2);min-width:58px;border-right:1px solid var(--border);text-align:center;font-family:'DM Mono',monospace;font-size:0.7rem;}
+.col-rest     {position:sticky;left:452px;z-index:5;background:var(--surface2);min-width:72px;border-right:2px solid var(--border);text-align:center;cursor:pointer;}
+.col-rest:hover{background:#2a2e45!important;}
+
+thead th.col-name,thead th.col-zoku,thead th.col-role,thead th.col-yomikomi,
+thead th.col-kyukei,thead th.col-zankyukei,thead th.col-soro,thead th.col-zangyou,thead th.col-rest{z-index:20;}
+
+td{border:1px solid var(--border);padding:0;text-align:center;vertical-align:middle;}
+
+/* 見込み残業セル */
+.yomikomi-cell{display:flex;flex-direction:column;align-items:center;justify-content:center;padding:2px;gap:1px;min-height:40px;}
+.yomikomi-cell .yk-val{font-size:0.82rem;font-weight:700;color:#ffb74d;font-family:'DM Mono',monospace;}
+.yomikomi-cell .yk-lbl{font-size:0.55rem;color:var(--muted);}
+
+/* 総労働・残業セル */
+.mono-cell{display:flex;flex-direction:column;align-items:center;justify-content:center;padding:2px;gap:1px;min-height:40px;}
+.mono-cell .mv{font-size:0.8rem;font-weight:700;font-family:'DM Mono',monospace;}
+.mono-cell .ml{font-size:0.55rem;color:var(--muted);}
+.mv-work{color:#90caf9;}
+.mv-over{color:#ffb74d;}
+.mv-minus{color:var(--sun);}
+
+/* 残公休 */
+.zankyukei-val{font-size:0.88rem;font-weight:700;}
+.zankyukei-plus{color:var(--green);}
+.zankyukei-zero{color:var(--muted);}
+.zankyukei-minus{color:var(--sun);}
+
+/* 休暇まとめ */
+.rest-summary{display:grid;grid-template-columns:1fr 1fr;gap:1px;padding:2px;height:100%;min-height:40px;}
+.rest-item-mini{display:flex;flex-direction:column;align-items:center;justify-content:center;border-radius:2px;padding:1px;}
+.rest-item-mini .rl{font-size:0.52rem;color:var(--muted);line-height:1.2;}
+.rest-item-mini .rv{font-size:0.75rem;font-weight:700;line-height:1.2;}
+.rv-yuu{color:#90caf9;}.rv-fuy{color:#80deea;}.rv-nat{color:#ffcc80;}.rv-kei{color:#f48fb1;}
+
+/* 日付列 ← 幅を狭める */
+.day-col{min-width:46px;width:46px;height:50px;}
+.day-header{padding:2px 1px 1px;}
+.day-num{font-weight:700;font-size:0.82rem;}
+.day-name{font-size:0.6rem;margin-top:1px;}
+.event-tag{font-size:0.52rem;background:rgba(255,213,79,.17);color:var(--event);border-radius:2px;padding:1px 2px;display:block;margin-top:1px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;}
+
+/* 列非表示 */
+.day-col-hidden{min-width:10px!important;width:10px!important;overflow:hidden;padding:0!important;border-left:none!important;border-right:none!important;opacity:0.3;}
+.day-col-hidden *{display:none!important;}
+.day-header.day-col-hidden{cursor:pointer;background:rgba(255,255,255,.04)!important;position:relative;}
+.day-header.day-col-hidden::after{content:'';display:block;width:4px;height:24px;margin:auto;background:var(--border);border-radius:2px;}
+/* 非表示ヘッダーのホバー */
+th.day-col-hidden:hover{opacity:0.7!important;background:rgba(92,107,192,.15)!important;}
+
+.sat{color:var(--sat)!important;background:rgba(79,195,247,.07)!important;}
+.sun{color:var(--sun)!important;background:rgba(239,83,80,.07)!important;}
+.hol{color:var(--hol)!important;background:rgba(244,143,177,.09)!important;}
+
+/* シフトセル — ドロップダウン（幅狭化） */
+.shift-cell{cursor:pointer;transition:filter .1s;}
+.shift-cell:hover{filter:brightness(1.15);}
+.shift-wrap{display:flex;flex-direction:column;align-items:center;justify-content:center;height:50px;gap:1px;padding:1px;}
+.shift-select{width:42px;background:transparent;border:1px solid var(--border);color:#000;font-weight:700;font-family:inherit;font-size:0.66rem;text-align:center;cursor:pointer;padding:1px;border-radius:3px;appearance:none;text-align-last:center;}
+.shift-select:focus{outline:2px solid var(--accent);}
+.shift-select option{color:#000;font-weight:700;background:#fff;}
+.shift-time-label{font-size:0.5rem;color:var(--muted);font-family:'DM Mono',monospace;line-height:1.2;text-align:center;}
+
+/* シフト種別色 */
+.s-A    {background:rgba(92,107,192,.22)!important;}.s-A .shift-select{color:#90caf9;}
+.s-B    {background:rgba(102,187,106,.18)!important;}.s-B .shift-select{color:#a5d6a7;}
+.s-C    {background:rgba(255,183,77,.15)!important;}.s-C .shift-select{color:#ffe082;}
+.s-D    {background:rgba(149,117,205,.2)!important;}.s-D .shift-select{color:#ce93d8;}
+.s-E    {background:rgba(38,166,154,.2)!important;}.s-E .shift-select{color:#80cbc4;}
+.s-F    {background:rgba(239,83,80,.15)!important;}.s-F .shift-select{color:#ef9a9a;}
+.s-G    {background:rgba(38,50,56,.6)!important;}.s-G .shift-select{color:#b0bec5;}
+.s-H    {background:rgba(255,138,101,.2)!important;}.s-H .shift-select{color:#ff8a65;}
+.s-off  {background:rgba(102,187,106,.12)!important;}.s-off .shift-select{color:#a5d6a7;}
+.s-kibou{background:rgba(255,138,101,.15)!important;}.s-kibou .shift-select{color:#ff8a65;}
+.s-yuu  {background:rgba(144,202,249,.12)!important;}.s-yuu .shift-select{color:#90caf9;}
+.s-fuyu {background:rgba(128,222,234,.12)!important;}.s-fuyu .shift-select{color:#80deea;}
+.s-natsu{background:rgba(255,204,128,.12)!important;}.s-natsu .shift-select{color:#ffcc80;}
+
+/* 合計行・役割集計行 */
+.total-row td,.role-count-row td{background:#1a1e30;font-size:0.68rem;color:var(--muted);padding:2px 1px;font-family:'DM Mono',monospace;}
+.total-row .col-name{color:var(--accent2);font-weight:600;font-family:inherit;font-size:0.72rem;}
+.role-count-row .col-name{color:#ffd54f;font-weight:600;font-family:inherit;font-size:0.68rem;}
+.role-count-row td{background:#181c2c;border-top:1px solid var(--border);}
+.role-count-cell{display:flex;flex-direction:column;align-items:center;justify-content:center;padding:1px;gap:1px;}
+.role-count-cell .ri{font-size:0.52rem;color:var(--muted);line-height:1.2;white-space:nowrap;}
+.role-count-cell .rv2{font-size:0.72rem;font-weight:700;color:var(--text);line-height:1;}
+
+.badge{display:inline-block;padding:2px 4px;border-radius:3px;font-size:0.6rem;font-weight:500;line-height:1.4;}
+.b-seishain{background:rgba(92,107,192,.3);color:#90caf9;}
+.b-keiyaku {background:rgba(102,187,106,.25);color:#a5d6a7;}
+.b-long    {background:rgba(255,183,77,.25);color:#ffe082;}
+.b-short   {background:rgba(149,117,205,.25);color:#ce93d8;}
+.b-arbeit  {background:rgba(128,128,128,.25);color:#ccc;}
+.role-badge{display:inline-block;padding:2px 3px;border-radius:2px;font-size:0.58rem;background:rgba(255,255,255,.07);color:var(--muted);}
+
+.summary-bar{display:flex;gap:14px;margin-top:9px;flex-wrap:wrap;font-size:0.76rem;color:var(--muted);}
+.summary-bar strong{color:var(--text);}
+
+/* ─── シフトパターン入力エリア（テーブル下部） ─── */
+.pattern-panel{margin-top:10px;background:var(--surface);border:1px solid var(--border);border-radius:10px;padding:10px 14px;}
+.pattern-panel-title{font-size:0.8rem;font-weight:600;color:var(--accent2);margin-bottom:8px;display:flex;align-items:center;gap:8px;}
+.pattern-grid{display:grid;grid-template-columns:repeat(auto-fill,minmax(290px,1fr));gap:8px;}
+.pattern-card{background:var(--surface2);border:1px solid var(--border);border-radius:7px;padding:8px 10px;}
+.pattern-card-header{display:flex;align-items:center;gap:7px;margin-bottom:6px;}
+.p-badge{display:inline-flex;align-items:center;justify-content:center;width:24px;height:24px;border-radius:5px;font-size:0.8rem;font-weight:700;}
+.pattern-card-header .p-info{font-size:0.68rem;color:var(--muted);font-family:'DM Mono',monospace;}
+.pattern-fields{display:grid;grid-template-columns:1fr 1fr 1fr;gap:5px;}
+.pf-item label{display:block;font-size:0.58rem;color:var(--muted);margin-bottom:2px;}
+.pf-item input[type="time"]{width:100%;background:var(--bg);border:1px solid var(--border);color:var(--text);padding:3px 5px;border-radius:4px;font-family:'DM Mono',monospace;font-size:0.75rem;text-align:center;}
+.pf-item input[type="time"]:focus{outline:2px solid var(--accent);}
+.p-calc{grid-column:1/-1;font-size:0.62rem;color:var(--muted);font-family:'DM Mono',monospace;margin-top:2px;}
+
+/* モーダル共通 */
+.modal-overlay{display:none;position:fixed;inset:0;background:rgba(0,0,0,.75);z-index:100;align-items:center;justify-content:center;}
+.modal-overlay.open{display:flex;}
+.modal-box{background:var(--surface2);border:1px solid var(--border);border-radius:12px;padding:16px 20px;max-width:96vw;max-height:92vh;overflow-y:auto;}
+.modal-box h3{margin-bottom:12px;font-size:0.9rem;color:var(--accent2);}
+.mf{margin-bottom:8px;}
+.mf label{display:block;font-size:0.72rem;color:var(--muted);margin-bottom:3px;}
+.mf input,.mf select{width:100%;background:var(--bg);border:1px solid var(--border);color:var(--text);padding:5px 8px;border-radius:5px;font-family:inherit;font-size:0.8rem;}
+.modal-actions{display:flex;gap:7px;margin-top:12px;justify-content:flex-end;flex-wrap:wrap;}
+
+/* 見込みモーダル */
+.yk-input{width:100%;background:var(--bg);border:1px solid var(--border);color:var(--text);padding:6px 9px;border-radius:5px;font-family:'DM Mono',monospace;font-size:1rem;text-align:center;}
+
+/* 休暇モーダル */
+.rest-grid{display:grid;grid-template-columns:1fr 1fr;gap:10px;margin-bottom:12px;}
+.rg-item label{display:flex;align-items:center;gap:4px;font-size:0.72rem;color:var(--muted);margin-bottom:3px;}
+.rg-item input{width:100%;background:var(--bg);border:1px solid var(--border);color:var(--text);padding:4px 7px;border-radius:5px;font-family:'DM Mono',monospace;font-size:0.88rem;text-align:center;}
+
+/* カレンダーモーダル */
+.cal-modal-box{width:640px;}
+.cal-modal-body{display:flex;gap:16px;align-items:flex-start;}
+.cal-month-badge{
+  flex-shrink:0;width:90px;
+  display:flex;flex-direction:column;align-items:center;justify-content:center;
+  background:var(--accent);border-radius:10px;padding:12px 6px;
+  font-weight:700;line-height:1.2;
+}
+.cal-month-badge .mb-num{font-size:2.6rem;font-family:'DM Mono',monospace;color:#fff;}
+.cal-month-badge .mb-label{font-size:0.72rem;color:rgba(255,255,255,.8);}
+.cal-modal-box img{flex:1;width:0;min-width:0;border-radius:8px;border:1px solid var(--border);}
+
+/* 役割ドロップダウン（インライン） */
+.role-select{
+  background:#2a2e45;border:1px solid var(--border);
+  color:#fff;font-weight:700;font-family:inherit;font-size:0.6rem;
+  border-radius:3px;padding:2px 2px;cursor:pointer;width:58px;
+  text-align-last:center;appearance:none;
+}
+.role-select option{color:#000;font-weight:700;background:#fff;}
+
+@media print{
+  /* B4用紙・横向き・カラー印刷設定 */
+  @page{
+    size:B4 landscape;
+    margin:8mm 6mm;
+  }
+  *{-webkit-print-color-adjust:exact!important;print-color-adjust:exact!important;color-adjust:exact!important;}
+  body{background:#fff!important;color:#000!important;padding:0;margin:0;font-size:0.5rem;}
+  /* 非表示にする操作UI */
+  .controls,.staff-bar,.legend,.pattern-panel,
+  .header-month-badge,.modal-overlay{display:none!important;}
+  /* ヘッダーをシンプルに */
+  .app-header{margin-bottom:4px;justify-content:flex-end;}
+  .app-title{font-size:1rem;color:#000;}
+  /* テーブルを全幅展開 */
+  .table-wrapper{
+    max-height:none!important;overflow:visible!important;
+    border:none!important;border-radius:0!important;
+    width:100%;
+  }
+  table{font-size:0.48rem;width:100%;border-collapse:collapse;}
+  /* 日付列を少し狭く */
+  .day-col{min-width:30px!important;width:30px!important;height:36px!important;}
+  .day-num{font-size:0.72rem!important;}
+  .day-name{font-size:0.55rem!important;}
+  .event-tag{font-size:0.44rem!important;}
+  /* シフトセル内 */
+  .shift-wrap{height:36px!important;}
+  .shift-select{width:28px!important;font-size:0.55rem!important;font-weight:700;color:#000!important;border:1px solid #aaa!important;}
+  .shift-time-label{font-size:0.4rem!important;}
+  /* 曜日カラー（色刷り） */
+  .sat{color:#1565c0!important;background:#ddeeff!important;}
+  .sun{color:#c62828!important;background:#ffeeee!important;}
+  .hol{color:#880e4f!important;background:#fce4ec!important;}
+  /* 固定左列 */
+  thead th,
+  .col-name,.col-zoku,.col-role,.col-yomikomi,
+  .col-kyukei,.col-zankyukei,.col-soro,.col-zangyou,.col-rest{
+    background:#e8eaf6!important;color:#000!important;
+    font-size:0.48rem!important;
+  }
+  /* シフト種別カラー（色刷り） */
+  .s-A{background:#c5cae9!important;}.s-A .shift-select{color:#1a237e!important;}
+  .s-B{background:#c8e6c9!important;}.s-B .shift-select{color:#1b5e20!important;}
+  .s-C{background:#fff9c4!important;}.s-C .shift-select{color:#f57f17!important;}
+  .s-D{background:#e1bee7!important;}.s-D .shift-select{color:#4a148c!important;}
+  .s-E{background:#b2dfdb!important;}.s-E .shift-select{color:#004d40!important;}
+  .s-F{background:#ffcdd2!important;}.s-F .shift-select{color:#b71c1c!important;}
+  .s-G{background:#cfd8dc!important;}.s-G .shift-select{color:#263238!important;}
+  .s-H{background:#ffccbc!important;}.s-H .shift-select{color:#bf360c!important;}
+  .s-off {background:#e8f5e9!important;}.s-off  .shift-select{color:#1b5e20!important;}
+  .s-kibou{background:#ffe0b2!important;}.s-kibou .shift-select{color:#e65100!important;}
+  .s-yuu {background:#e3f2fd!important;}.s-yuu  .shift-select{color:#0d47a1!important;}
+  .s-fuyu{background:#e0f7fa!important;}.s-fuyu .shift-select{color:#006064!important;}
+  .s-natsu{background:#fff3e0!important;}.s-natsu .shift-select{color:#e65100!important;}
+  /* バッジ・役割 */
+  .badge{font-size:0.44rem!important;padding:1px 3px!important;}
+  .b-seishain{background:#c5cae9!important;color:#1a237e!important;}
+  .b-keiyaku {background:#c8e6c9!important;color:#1b5e20!important;}
+  .b-long    {background:#fff9c4!important;color:#f57f17!important;}
+  .b-short   {background:#e1bee7!important;color:#4a148c!important;}
+  .b-arbeit  {background:#eeeeee!important;color:#333!important;}
+  .role-select{background:#f5f5f5!important;color:#000!important;font-size:0.44rem!important;width:50px!important;border:1px solid #aaa!important;}
+  /* 合計行・役割集計行 */
+  .total-row td{background:#e8eaf6!important;color:#333!important;}
+  .role-count-row td{background:#f3f3f3!important;color:#555!important;}
+  /* 見込み・残業セル */
+  .yomikomi-cell .yk-val{color:#e65100!important;}
+  .mv-work{color:#0d47a1!important;}
+  .mv-over{color:#e65100!important;}
+  .zankyukei-plus{color:#1b5e20!important;}
+  .zankyukei-minus{color:#c62828!important;}
+  /* 非表示列は印刷でも非表示 */
+  .day-col-hidden{min-width:0!important;width:0!important;display:none!important;}
+  /* サマリーバー */
+  .summary-bar{margin-top:3px;font-size:0.48rem;color:#333;}
+}
+
+/* ===== スマホ閲覧専用モード ===== */
+@media screen and (max-width:768px){
+  /* 操作UI非表示 */
+  .staff-bar,.pattern-panel{display:none!important;}
+  /* 追加・編集ボタン類を無効化 */
+  .btn.primary,.btn.warn{pointer-events:none;opacity:0.5;}
+  /* シフトのドロップダウンを読み取り専用表示に */
+  .shift-select{pointer-events:none;appearance:none;border:none;background:transparent;}
+  .role-select {pointer-events:none;appearance:none;border:none;background:transparent;color:#fff;}
+  .col-yomikomi{pointer-events:none!important;}
+  .col-zankyukei{pointer-events:none!important;}
+  .col-rest{pointer-events:none!important;}
+  /* スマホ用フォントサイズ調整 */
+  body{padding:8px;font-size:0.72rem;}
+  .app-title{font-size:1rem;}
+  .table-wrapper{max-height:70vh;}
+  /* 閲覧専用ラベル */
+  .sp-readonly-badge{
+    display:inline-flex;align-items:center;gap:4px;
+    background:rgba(239,83,80,.15);border:1px solid rgba(239,83,80,.4);
+    border-radius:6px;padding:3px 10px;font-size:0.72rem;color:#ef9a9a;
+  }
+}
+/* PCでは閲覧専用バッジ非表示 */
+@media screen and (min-width:769px){
+  .sp-readonly-badge{display:none!important;}
+}
+</style>
+</head>
+<body>
+
+<div class="app-header">
+  <div class="app-title">📅 シフト管理表</div>
+  <span class="sp-readonly-badge">👁 閲覧専用</span>
+  <div class="header-month-badge" id="header-month-badge">
+    <span class="hm-num" id="hm-num">—</span>
+    <div style="display:flex;flex-direction:column;justify-content:center;">
+      <span class="hm-unit">月度</span>
+      <span class="hm-hol" id="hm-hol">─</span>
+    </div>
+  </div>
+  <div class="controls">
+    <button class="btn info" onclick="openCalModal()">📋 月間休日一覧</button>
+    <button class="btn"      onclick="prevMonth()">◀ 前月</button>
+    <div class="period-label" id="period-label"></div>
+    <button class="btn"      onclick="nextMonth()">次月 ▶</button>
+    <button class="btn primary" onclick="window.print()">🖨 B4カラー印刷</button>
+    <button class="btn"      onclick="exportCSV()">📥 CSV</button>
+  </div>
+</div>
+
+<div class="staff-bar">
+  <label>スタッフ追加：</label>
+  <input class="inp" id="newName" placeholder="氏名" style="width:86px" onkeydown="if(event.key==='Enter')addStaff()">
+  <select class="inp" id="newZoku" style="width:104px">
+    <option value="seishain">社員</option><option value="keiyaku">契約</option>
+    <option value="long">ロングパート</option><option value="short">ショートパート</option>
+    <option value="arbeit">アルバイト</option>
+  </select>
+  <select class="inp" id="newRole" style="width:104px">
+    <option value="手切り">手切り</option><option value="スライサー">スライサー</option>
+    <option value="パック品出し">パック品出し</option><option value="鶏">鶏</option>
+    <option value="冷凍">冷凍</option><option value="清掃">清掃</option>
+  </select>
+  <button class="btn primary" onclick="addStaff()">＋ 追加</button>
+</div>
+
+<div class="legend">
+  <span style="color:var(--muted)">曜日：</span>
+  <span class="leg"><span class="leg-dot" style="background:rgba(79,195,247,.4)"></span><span style="color:var(--sat)">土</span></span>
+  <span class="leg"><span class="leg-dot" style="background:rgba(239,83,80,.4)"></span><span style="color:var(--sun)">日</span></span>
+  <span class="leg"><span class="leg-dot" style="background:rgba(244,143,177,.4)"></span><span style="color:var(--hol)">祝/振替</span></span>
+  <span style="color:var(--muted);margin-left:4px">所属：</span>
+  <span class="badge b-seishain">社員</span><span class="badge b-keiyaku">契約</span>
+  <span class="badge b-long">ロングP</span><span class="badge b-short">ショートP</span><span class="badge b-arbeit">アルバイト</span>
+  <span style="color:var(--muted);margin-left:5px;font-size:0.66rem">※氏名・見込残業・休暇欄クリックで編集　社員以外は残公休セルクリックで基準日数設定</span>
+  <span id="hidden-col-count" style="color:#7986cb;font-size:0.66rem;margin-left:4px;">　列ヘッダーをクリックで非表示/再表示</span>
+</div>
+
+<!-- テーブル -->
+<div class="table-wrapper">
+  <table id="shift-table">
+    <thead id="table-head"></thead>
+    <tbody id="table-body"></tbody>
+  </table>
+</div>
+
+<div class="summary-bar" id="summary-bar"></div>
+
+<!-- ── シフトパターン入力パネル（テーブル下部）── -->
+<div class="pattern-panel">
+  <div class="pattern-panel-title">
+    ⚙️ シフトパターン A〜G 設定
+    <span style="font-size:0.66rem;color:var(--muted);font-weight:400">時間を変更すると即座にシフトへ反映されます</span>
+  </div>
+  <div class="pattern-grid" id="pattern-grid"></div>
+</div>
+
+<!-- ① スタッフ編集 -->
+<div class="modal-overlay" id="editModal">
+  <div class="modal-box" style="width:340px">
+    <h3>✏️ スタッフ情報を編集</h3>
+    <div class="mf"><label>氏名</label><input type="text" id="edit-name" maxlength="15"></div>
+    <div class="mf"><label>所属</label>
+      <select id="edit-zoku">
+        <option value="seishain">社員</option><option value="keiyaku">契約</option>
+        <option value="long">ロングパート</option><option value="short">ショートパート</option>
+        <option value="arbeit">アルバイト</option>
+      </select>
+    </div>
+    <div class="mf"><label>役割</label>
+      <select id="edit-role">
+        <option value="手切り">手切り</option><option value="スライサー">スライサー</option>
+        <option value="パック品出し">パック品出し</option><option value="鶏">鶏</option>
+        <option value="冷凍">冷凍</option><option value="清掃">清掃</option>
+      </select>
+    </div>
+    <div class="modal-actions">
+      <button class="btn" onclick="closeModal('editModal')">キャンセル</button>
+      <button class="btn" style="background:#c62828;border-color:#c62828" onclick="deleteStaffModal()">削除</button>
+      <button class="btn primary" onclick="saveEditModal()">保存</button>
+    </div>
+  </div>
+</div>
+
+<!-- ② 見込み残業編集 -->
+<div class="modal-overlay" id="yomikomiModal">
+  <div class="modal-box" style="width:268px">
+    <h3>⏱️ 見込み残業 — <span id="yk-modal-name" style="color:var(--text)"></span></h3>
+    <div class="mf">
+      <label>月間見込み残業時間（時間）</label>
+      <input class="yk-input" type="number" id="yk-input" min="0" max="200" step="0.5" placeholder="例: 20">
+    </div>
+    <div class="modal-actions">
+      <button class="btn" onclick="closeModal('yomikomiModal')">キャンセル</button>
+      <button class="btn primary" onclick="saveYomikomiModal()">保存</button>
+    </div>
+  </div>
+</div>
+
+<!-- ③ 休暇編集 -->
+<div class="modal-overlay" id="restModal">
+  <div class="modal-box" style="width:300px">
+    <h3>🗓️ 休暇回数 — <span id="rest-modal-name" style="color:var(--text)"></span></h3>
+    <div class="rest-grid">
+      <div class="rg-item"><label><span style="color:#90caf9">🟦</span>有給休暇</label><input type="number" id="re-yuu" min="0" max="99"></div>
+      <div class="rg-item"><label><span style="color:#80deea">❄️</span>冬期休暇</label><input type="number" id="re-fuy" min="0" max="99"></div>
+      <div class="rg-item"><label><span style="color:#ffcc80">☀️</span>夏期休暇</label><input type="number" id="re-nat" min="0" max="99"></div>
+      <div class="rg-item"><label><span style="color:#f48fb1">🌸</span>慶弔休暇</label><input type="number" id="re-kei" min="0" max="99"></div>
+    </div>
+    <div class="modal-actions">
+      <button class="btn" onclick="closeModal('restModal')">キャンセル</button>
+      <button class="btn primary" onclick="saveRestModal()">保存</button>
+    </div>
+  </div>
+</div>
+
+<!-- ⑤ 残公休基準日数設定（非社員用） -->
+<div class="modal-overlay" id="zanModal">
+  <div class="modal-box" style="width:290px">
+    <h3>📅 残公休 基準日数設定</h3>
+    <div style="font-size:0.74rem;color:var(--muted);margin-bottom:10px;">
+      <span id="zan-modal-name" style="color:var(--text);font-weight:600;"></span> さんの<br>
+      月間の公休予定日数を入力してください。<br>
+      <span style="font-size:0.68rem;color:#ffb74d;">※社員は月間休日マスタが自動適用されます</span>
+    </div>
+    <div class="mf">
+      <label>残公休 基準日数（日）</label>
+      <input type="number" id="zan-input" min="0" max="31" step="1"
+        style="width:100%;background:var(--bg);border:1px solid var(--border);color:var(--text);
+        padding:6px 9px;border-radius:5px;font-family:'DM Mono',monospace;font-size:1.1rem;text-align:center;">
+    </div>
+    <div style="font-size:0.68rem;color:var(--muted);margin-bottom:8px;">
+      公休をシフトに入力するたびに残公休が1ずつ減ります
+    </div>
+    <div class="modal-actions">
+      <button class="btn" onclick="closeModal('zanModal')">キャンセル</button>
+      <button class="btn primary" onclick="saveZanModal()">保存</button>
+    </div>
+  </div>
+</div>
+
+<!-- ④ 月間休日一覧 -->
+<div class="modal-overlay" id="calModal">
+  <div class="modal-box cal-modal-box">
+    <h3>📋 月間休日一覧（年間スケジュール）</h3>
+    <div class="cal-modal-body">
+      <div class="cal-month-badge">
+        <span class="mb-num" id="cal-month-num">—</span>
+        <span class="mb-label">月度</span>
+        <span style="font-size:0.62rem;color:rgba(255,255,255,.7);margin-top:4px;text-align:center;" id="cal-month-hol">─日</span>
+      </div>
+      <img id="cal-img" src="" alt="月間休日一覧表">
+    </div>
+    <div class="modal-actions" style="margin-top:10px">
+      <button class="btn primary" onclick="closeModal('calModal')">閉じる</button>
+    </div>
+  </div>
+</div>
+
+<script>
+const CAL_IMG_SRC = "data:image/png;base64,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pDDZDgcRsU2ocyh44bRggHYRmMYoe5UZslTIpUajhdGtirqXRzXrrpc21N1GoSdOWp1U3N7ATghKUD58ZPzxz1Nq0laRK4bkp3GV8G1wSi2pWB4WeaLZAAGAAI+EtNIcW4hpCVr90oJwVfOY0fllSnrXFVPbh65F3ttNLt7VSKjXvd1apa+iRT86zZguu2DblM4vMioHXWGlJ8HgXOvx4i44+HGWnVIU60hZQdZBUnOqcc46o+42Spfs01/o4uo9Q/OKWsfdTXvRdzzbzotzMY6YzBG080xBBB0QARmMQQBBWP17P/5e/wCdEEDH69n/APL3/OiCAKSsG67hlLNpUtL1R1tpuXSlCQE7B5Iecs7n3u95qfwgggA5Z3Pvd7zU/hByzufe73mp/CCCADlnc+93vNT+EHLO597vean8IIIAOWdz73e81P4Qcs7n3u95qfwgggA5Z3Pvd7zU/hByzufe73mp/CCCADlnc+93vNT+EHLO597vean8IIIAOWdz73e81P4Qcs7n3u95qfwgggA5Z3Pvd7zU/hByzufe73mp/CCCADlnc+93vNT+EHLO597vean8IIIAOWdz73e81P4Qcs7n3u95qfwgggA5Z3Pvd7zU/hByzufe73mp/CCCADlnc+93vNT+EHLO597vean8IIIAOWdz73e81P4RxNXhcouRt4VZ7XDBGdVPNn5oIIAd8trq3y/5qfwg5bXVvl/zU/hBBAGOW11b5f8ANT+EZ5bXVvl/zU/hBBABy2urfL/mp/CDltdW+X/NT+EEEAHLa6t8v+an8IOW11b5f81P4QQQActrq3y/5qfwjHLa6t8v+an8IIIAOW11b5f81P4Qctrq3y/5qfwgggA5bXTvl/zU/hGeW11b5f8ANT+EEEAHLa6t8v8Amp/CDltdW+X/ADU/hBBABy2urfL/AJqfwjHLa6t8v+an8IIIAiVoXXcLE7XVNVR1JdqTy1kBO1RUcnmiQcs7n3u95qfwgggA5Z3Pvd7zU/hByzufe73mp/CCCADlnc+93vNT+EHLO597vean8IIIAOWdz73e81P4Qcs7n3u95qfwgggA5Z3Pvd7zU/hByzufe73mp/CCCADlnc+93vNT+EHLO597vean8IIIAOWdz73e81P4Qcs7n3u95qfwgggA5Z3Pvd7zU/hByzufe73mp/CCCADlnc+93vNT+EHLO597vean8IIIAOWdz73e81P4Qcs7n3u95qfwgggA5Z3Pvd7zU/hByzufe73mp/CCCADlnc+93vNT+EHLO597vean8IIIAOWdz73e81P4RrmryuZUq6k1d4goIPgp6vmgggD6ty8rnaoFPabq7yUIlm0pGqnYAkeKGHLa6t8v+an8IIIAOW11b5f81P4RjltdW+X/ADU/hBBABy2unfL/AJqfwg5bXVvl/wA1P4QQQActrq3y/wCan8Izy2urfL/mp/CCCADltdW+X/NT+EY5bXTvl/zU/hBBABy2urfL/mp/CDltdO+X/NT+EEEAHLa6t8v+an8Izy2urfL/AJqfwgggDHLa6t8v+an8IOW1075f81P4QQQBnltdW+X/ADU/hGOW11b5f81P4QQQA00QVSoVbSzUZiozS5h1FG1UqUAMDhUbNkEEEAf/2Q==";
+
+// 月間休日マスタ: キーは「シフト開始月」= YYYY-MM（currentMonthに対応）
+// 例: currentMonth=6(7月) → キー'2026-07' → 7/11〜8/10の月間休日数
+const MONTHLY_HOLIDAYS_MASTER={
+  // 2025年度
+  '2025-03':9,  // 3/11-4/10  (4月度相当)
+  '2025-04':9,  // 4/11-5/10  (5月度相当)
+  '2025-05':10, // 5/11-6/10  (6月度相当)
+  '2025-06':8,  // 6/11-7/10  (7月度相当)★8日
+  '2025-07':9,  // 7/11-8/10  (8月度相当)
+  '2025-08':10, // 8/11-9/10  (9月度相当)
+  '2025-09':9,  // 9/11-10/10 (10月度相当)
+  '2025-10':10, // 10/11-11/10(11月度相当)
+  '2025-11':9,  // 11/11-12/10(12月度相当)
+  '2025-12':9,  // 12/11-1/10 (1月度相当)
+  '2026-01':10, // 1/11-2/10  (2月度相当)
+  '2026-02':9,  // 2/11-3/10  (3月度相当)
+  // 2026年度（画像の表を同じ日数で繰り返し適用）
+  '2026-03':9,  // 3/11-4/10
+  '2026-04':9,  // 4/11-5/10
+  '2026-05':10, // 5/11-6/10
+  '2026-06':8,  // 6/11-7/10  ★8日
+  '2026-07':9,  // 7/11-8/10  ← 現在表示中
+  '2026-08':10, // 8/11-9/10
+  '2026-09':9,  // 9/11-10/10
+  '2026-10':10, // 10/11-11/10
+  '2026-11':9,  // 11/11-12/10
+  '2026-12':9,  // 12/11-1/10
+  '2027-01':10, // 1/11-2/10
+  '2027-02':9,  // 2/11-3/10
+};
+const HOLIDAYS={
+  '2025-01-01':'元日','2025-01-13':'成人の日',
+  '2025-02-11':'建国記念の日','2025-02-23':'天皇誕生日','2025-02-24':'振替休日',
+  '2025-03-20':'春分の日','2025-04-29':'昭和の日',
+  '2025-05-03':'憲法記念日','2025-05-04':'みどりの日','2025-05-05':'こどもの日','2025-05-06':'振替休日',
+  '2025-07-21':'海の日','2025-08-11':'山の日',
+  '2025-09-15':'敬老の日','2025-09-23':'秋分の日',
+  '2025-10-13':'スポーツの日','2025-11-03':'文化の日','2025-11-23':'勤労感謝の日','2025-11-24':'振替休日',
+  '2026-01-01':'元日','2026-01-12':'成人の日',
+  '2026-02-11':'建国記念の日','2026-02-23':'天皇誕生日',
+  '2026-03-20':'春分の日','2026-04-29':'昭和の日',
+  '2026-05-03':'憲法記念日','2026-05-04':'みどりの日','2026-05-05':'こどもの日','2026-05-06':'振替休日',
+  '2026-07-20':'海の日','2026-08-11':'山の日',
+  '2026-09-21':'敬老の日','2026-09-22':'国民の休日','2026-09-23':'秋分の日',
+  '2026-10-12':'スポーツの日','2026-11-03':'文化の日','2026-11-23':'勤労感謝の日',
+};
+const MONTHLY_EVENTS={19:'食育の日',22:'ショートケーキ',25:'プリンの日',29:'肉の日'};
+const SPECIAL_EVENTS={'02-14':'バレンタイン','03-14':'ホワイトデー','07-07':'七夕','10-31':'ハロウィン','12-24':'クリスマスイブ','12-25':'クリスマス','12-31':'大晦日'};
+
+let PATTERNS = {
+  A:{ label:'A', in:'08:00', brk:'01:00', out:'17:00', cls:'s-A', color:'#90caf9' },
+  B:{ label:'B', in:'09:00', brk:'01:00', out:'18:00', cls:'s-B', color:'#a5d6a7' },
+  C:{ label:'C', in:'10:00', brk:'01:00', out:'19:00', cls:'s-C', color:'#ffe082' },
+  D:{ label:'D', in:'07:00', brk:'01:00', out:'16:00', cls:'s-D', color:'#ce93d8' },
+  E:{ label:'E', in:'06:00', brk:'00:30', out:'14:30', cls:'s-E', color:'#80cbc4' },
+  F:{ label:'F', in:'14:00', brk:'01:00', out:'23:00', cls:'s-F', color:'#ef9a9a' },
+  G:{ label:'G', in:'22:00', brk:'01:00', out:'07:00', cls:'s-G', color:'#b0bec5' },
+  H:{ label:'H', in:'17:00', brk:'00:00', out:'20:00', cls:'s-H', color:'#ffab91' },
+};
+const REST_OPTIONS=[
+  {value:'公休',   label:'公休',   cls:'s-off'},
+  {value:'希望休', label:'希望休', cls:'s-kibou'},
+  {value:'有給',   label:'有給',   cls:'s-yuu'},
+  {value:'冬休み', label:'冬休み', cls:'s-fuyu'},
+  {value:'夏休み', label:'夏休み', cls:'s-natsu'},
+];
+function buildOptions(){
+  const opts=[{value:'',label:'─'}];
+  Object.entries(PATTERNS).forEach(([k,p])=>opts.push({value:k,label:p.label,cls:p.cls}));
+  REST_OPTIONS.forEach(r=>opts.push({value:r.value,label:r.label,cls:r.cls}));
+  return opts;
+}
+const ZOKU_INFO={
+  seishain:{label:'社員',cls:'b-seishain'},
+  keiyaku: {label:'契約',cls:'b-keiyaku'},
+  long:    {label:'ロングP',cls:'b-long'},
+  short:   {label:'ショートP',cls:'b-short'},
+  arbeit:  {label:'アルバイト',cls:'b-arbeit'},
+};
+const ROLES=['手切り','スライサー','パック品出し','鶏','冷凍','清掃'];
+const DAYS_JA=['日','月','火','水','木','金','土'];
+
+const _now=new Date();
+let currentYear=_now.getFullYear(), currentMonth=_now.getMonth();
+let staffList=[
+  {name:'田中 花子',zoku:'seishain',role:'手切り',    yomikomi:20,zanBase:null,rest:{yuu:0,fuy:0,nat:0,kei:0}},
+  {name:'鈴木 一郎',zoku:'long',    role:'スライサー', yomikomi:10,zanBase:9,  rest:{yuu:0,fuy:0,nat:0,kei:0}},
+  {name:'佐藤 次郎',zoku:'short',   role:'パック品出し',yomikomi:0, zanBase:9,  rest:{yuu:0,fuy:0,nat:0,kei:0}},
+  {name:'山田 幸子',zoku:'arbeit',  role:'清掃',       yomikomi:0, zanBase:9,  rest:{yuu:0,fuy:0,nat:0,kei:0}},
+];
+// zanBase: 社員はnull（月間休日マスタを自動適用）、それ以外は手動設定値
+let shiftData={}, editIdx=-1, ykIdx=-1, restIdx=-1, zanIdx=-1;
+// 列非表示: キー = "YYYY-MM"（月ごとに管理）、値 = 非表示にした dateKey の Set
+const hiddenCols={}; // 例: {'2026-06': Set{'2026-07-01','2026-07-02',...}}
+function getHiddenSet(){
+  const k=`${currentYear}-${String(currentMonth+1).padStart(2,'0')}`;
+  if(!hiddenCols[k])hiddenCols[k]=new Set();
+  return hiddenCols[k];
+}
+function isHidden(dk){return getHiddenSet().has(dk);}
+function toggleHidden(dk){
+  const s=getHiddenSet();
+  if(s.has(dk))s.delete(dk);else s.add(dk);
+}
+
+// ===== ユーティリティ =====
+// 7月度(currentMonth=5)のみ 6/16〜7/10、それ以外は 〇/11〜翌月10日
+function is7gatsudo(y,m){
+  // 6月(m=5)が7月度に相当
+  return m===5;
+}
+function getPeriodDates(y,m){
+  const startDay=is7gatsudo(y,m)?16:11;
+  const dates=[], start=new Date(y,m,startDay);
+  const em=m===11?0:m+1, ey=m===11?y+1:y;
+  const end=new Date(ey,em,10), cur=new Date(start);
+  while(cur<=end){dates.push(new Date(cur));cur.setDate(cur.getDate()+1);}
+  return dates;
+}
+function dateKey(d){return `${d.getFullYear()}-${String(d.getMonth()+1).padStart(2,'0')}-${String(d.getDate()).padStart(2,'0')}`;}
+function getDayClass(d){
+  if(HOLIDAYS[dateKey(d)])return 'hol';
+  const w=d.getDay();return w===0?'sun':w===6?'sat':'';
+}
+function getEvent(d){
+  const hol=HOLIDAYS[dateKey(d)];if(hol)return hol;
+  const md=`${String(d.getMonth()+1).padStart(2,'0')}-${String(d.getDate()).padStart(2,'0')}`;
+  return SPECIAL_EVENTS[md]||MONTHLY_EVENTS[d.getDate()]||null;
+}
+function toMins(t){if(!t)return 0;const[h,m]=t.split(':').map(Number);return h*60+(m||0);}
+function fromMins(m){
+  const sign=m<0?'-':'';const am=Math.abs(m);
+  return `${sign}${Math.floor(am/60)}:${String(am%60).padStart(2,'0')}`;
+}
+function calcPatternMins(p){
+  // 連続勤務時間（休憩なしの状態）を計算
+  let rawWork=toMins(p.out)-toMins(p.in);
+  if(rawWork<0)rawWork+=24*60; // 日をまたぐ場合
+  // 連続6時間以上なら休憩を自動で1:00に（手動設定が1:00未満の場合のみ上書き）
+  const brkMins=toMins(p.brk);
+  const effectiveBrk=(rawWork>=6*60 && brkMins<60)?60:brkMins;
+  const w=rawWork-effectiveBrk;
+  return{work:Math.max(0,w), over:Math.max(0,w-8*60), autoBrk:(rawWork>=6*60 && brkMins<60)};
+}
+function getMasterKey(y,m){return `${y}-${String(m+1).padStart(2,'0')}`;}
+function getMonthlyHolidayCount(y,m){return MONTHLY_HOLIDAYS_MASTER[getMasterKey(y,m)]??null;}
+function calcStaffTotals(si,dates){
+  let tw=0,to=0,kyukei=0;
+  dates.forEach(d=>{
+    const v=shiftData[`${si}-${dateKey(d)}`]||'';
+    if(PATTERNS[v]){const{work,over}=calcPatternMins(PATTERNS[v]);tw+=work;to+=over;}
+    if(v==='公休'||v==='希望休')kyukei++;
+  });
+  return{totalWork:tw,totalOver:to,kyukei};
+}
+function countKyukei(si,dates){let c=0;dates.forEach(d=>{const v=shiftData[`${si}-${dateKey(d)}`];if(v==='公休'||v==='希望休')c++;});return c;}
+
+// ===== シフトパターンパネル描画 =====
+function renderPatternPanel(){
+  const grid=document.getElementById('pattern-grid');
+  grid.innerHTML='';
+  Object.entries(PATTERNS).forEach(([key,p])=>{
+    const{work,over}=calcPatternMins(p);
+    const card=document.createElement('div');
+    card.className='pattern-card';
+    card.innerHTML=`
+      <div class="pattern-card-header">
+        <span class="p-badge" style="background:${p.color}22;color:${p.color};border:1px solid ${p.color}55">${key}</span>
+        <span class="p-info" id="pcalc-${key}">${fromMins(work)}h 実働 / 残業${fromMins(over)}h${calcPatternMins(p).autoBrk?' ⚠️休憩自動1h':''}</span>
+      </div>
+      <div class="pattern-fields">
+        <div class="pf-item"><label>🟢 出勤</label><input type="time" id="pp-${key}-in"  value="${p.in}"></div>
+        <div class="pf-item"><label>🍱 休憩</label><input type="time" id="pp-${key}-brk" value="${p.brk}"></div>
+        <div class="pf-item"><label>🔴 退勤</label><input type="time" id="pp-${key}-out" value="${p.out}"></div>
+      </div>`;
+    grid.appendChild(card);
+    // リアルタイム更新
+    ['in','brk','out'].forEach(field=>{
+      document.getElementById(`pp-${key}-${field}`).addEventListener('input',()=>{
+        PATTERNS[key].in  = document.getElementById(`pp-${key}-in`).value;
+        PATTERNS[key].brk = document.getElementById(`pp-${key}-brk`).value;
+        PATTERNS[key].out = document.getElementById(`pp-${key}-out`).value;
+        const{work:w2,over:o2,autoBrk:ab2}=calcPatternMins(PATTERNS[key]);
+        document.getElementById(`pcalc-${key}`).textContent=`${fromMins(w2)}h 実働 / 残業${fromMins(o2)}h${ab2?' ⚠️休憩自動1h':''}`;
+        // シフトラベル・集計を再計算（全行）
+        const dates=getPeriodDates(currentYear,currentMonth);
+        staffList.forEach((_,si)=>{
+          dates.forEach(d=>{
+            const dk=`${si}-${dateKey(d)}`;
+            if(shiftData[dk]===key){
+              const lbl=document.getElementById(`tlbl-${dk}`);
+              if(lbl)setTimeLabel(lbl,key);
+            }
+          });
+          refreshStaffRow(si,dates);
+        });
+        updateSummary(dates);
+      });
+    });
+  });
+}
+
+// ===== レンダリング =====
+function render(){
+  const dates=getPeriodDates(currentYear,currentMonth);
+  const nm=currentMonth===11?0:currentMonth+1, ny=currentMonth===11?currentYear+1:currentYear;
+  const startDay=is7gatsudo(currentYear,currentMonth)?16:11;
+  document.getElementById('period-label').textContent=
+    `${currentYear}/${String(currentMonth+1).padStart(2,'0')}/${startDay} 〜 ${ny}/${String(nm+1).padStart(2,'0')}/10`;
+  // ヘッダー月度バッジ更新
+  // 月度 = 翌月（8/11〜9/10 → 9月度）
+  const dispMonth=currentMonth===11?1:currentMonth+2;
+  document.getElementById('hm-num').textContent=dispMonth;
+  const mhcH=getMonthlyHolidayCount(currentYear,currentMonth);
+  document.getElementById('hm-hol').textContent=mhcH!==null?`月間休日 ${mhcH}日`:'';
+  renderHead(dates);renderBody(dates);updateSummary(dates);
+  renderPatternPanel();
+  applyHiddenCols();
+}
+
+function renderHead(dates){
+  const thead=document.getElementById('table-head');thead.innerHTML='';
+  const tr=document.createElement('tr');
+  const mkth=(cls,html)=>{const th=document.createElement('th');th.className=cls;th.innerHTML=html;return th;};
+  tr.appendChild(mkth('col-name','氏名'));
+  tr.appendChild(mkth('col-zoku','所属'));
+  tr.appendChild(mkth('col-role','役割'));
+  tr.appendChild(mkth('col-yomikomi','見込<br>残業(h)'));
+  tr.appendChild(mkth('col-kyukei','公休<br>回数'));
+  const mhc=getMonthlyHolidayCount(currentYear,currentMonth);
+  const zanTh=document.createElement('th');zanTh.className='col-zankyukei';
+  zanTh.innerHTML=`<div style="font-size:0.6rem;color:var(--muted)">残公休</div>`
+    +(mhc!==null?`<div style="font-size:0.58rem;color:#ffd54f;">社員:${mhc}日</div>`:'');
+  tr.appendChild(zanTh);
+  tr.appendChild(mkth('col-soro','総労働<br>(h:mm)'));
+  tr.appendChild(mkth('col-zangyou','実残業<br>(h:mm)'));
+  const thRest=document.createElement('th');thRest.className='col-rest';
+  thRest.innerHTML=`<div style="display:grid;grid-template-columns:1fr 1fr;gap:1px;font-size:0.58rem;padding:2px;">
+    <span style="color:#90caf9">有給</span><span style="color:#80deea">冬休</span>
+    <span style="color:#ffcc80">夏休</span><span style="color:#f48fb1">慶弔</span></div>`;
+  tr.appendChild(thRest);
+  dates.forEach(d=>{
+    const dk=dateKey(d);
+    const th=document.createElement('th');const cls=getDayClass(d);
+    const hidden=isHidden(dk);
+    th.className=`day-col day-header ${cls}${hidden?' day-col-hidden':''}`;
+    th.title=hidden?`${d.getMonth()+1}/${d.getDate()} クリックで再表示`:`${d.getMonth()+1}/${d.getDate()} クリックで列を非表示`;
+    th.style.cursor='pointer';
+    const ev=getEvent(d);
+    let inner=`<div class="day-num">${d.getDate()}</div><div class="day-name">${DAYS_JA[d.getDay()]}</div>`;
+    if(ev)inner+=`<span class="event-tag" title="${ev}">${ev}</span>`;
+    th.innerHTML=inner;
+    th.addEventListener('click',()=>{toggleHidden(dk);applyHiddenCols();});
+    tr.appendChild(th);
+  });
+  thead.appendChild(tr);
+}
+
+function renderBody(dates){
+  const tbody=document.getElementById('table-body');tbody.innerHTML='';
+  staffList.forEach((s,si)=>{
+    const tr=document.createElement('tr');
+    const zi=ZOKU_INFO[s.zoku]||ZOKU_INFO.arbeit;
+    const tdN=document.createElement('td');tdN.className='col-name';tdN.style.cursor='pointer';
+    tdN.title='クリックして編集';
+    tdN.innerHTML=`<span style="font-size:0.74rem">${s.name}</span>`;
+    tdN.addEventListener('click',()=>openEditModal(si));tr.appendChild(tdN);
+    const tdZ=document.createElement('td');tdZ.className='col-zoku';
+    tdZ.innerHTML=`<span class="badge ${zi.cls}">${zi.label}</span>`;tr.appendChild(tdZ);
+    const tdR=document.createElement('td');tdR.className='col-role';
+    const roleSel=document.createElement('select');roleSel.className='role-select';
+    ROLES.forEach(r=>{
+      const op=document.createElement('option');op.value=r;op.textContent=r;
+      if(r===s.role)op.selected=true;roleSel.appendChild(op);
+    });
+    roleSel.addEventListener('change',e=>{
+      staffList[si].role=e.target.value;
+      // 役割集計行も再描画
+      const allDates=getPeriodDates(currentYear,currentMonth);
+      render();
+    });
+    tdR.appendChild(roleSel);tr.appendChild(tdR);
+    const tdYk=document.createElement('td');tdYk.className='col-yomikomi';tdYk.id=`yk-${si}`;
+    tdYk.title='クリックして編集';tdYk.addEventListener('click',()=>openYomikomiModal(si));
+    setYomikomiCell(tdYk,s.yomikomi);tr.appendChild(tdYk);
+    const tdK=document.createElement('td');tdK.className='col-kyukei';tdK.id=`kyukei-${si}`;
+    tdK.textContent='0';tr.appendChild(tdK);
+    const tdZan=document.createElement('td');tdZan.className='col-zankyukei';tdZan.id=`zankyukei-${si}`;
+    // 非社員はクリックで基準日数を手動設定
+    if(s.zoku!=='seishain'){
+      tdZan.addEventListener('click',()=>openZanModal(si));
+    }
+    setZankyukeiCell(tdZan,si,0);tr.appendChild(tdZan);
+    const tdSoro=document.createElement('td');tdSoro.className='col-soro';tdSoro.id=`soro-${si}`;
+    setMonoCell(tdSoro,'0:00','mv-work','総労働');tr.appendChild(tdSoro);
+    const tdZg=document.createElement('td');tdZg.className='col-zangyou';tdZg.id=`zangyou-${si}`;
+    setMonoCell(tdZg,'0:00','mv-over','実残業');tr.appendChild(tdZg);
+    const tdRest=document.createElement('td');tdRest.className='col-rest';tdRest.id=`rest-${si}`;
+    tdRest.title='クリックして編集';tdRest.addEventListener('click',()=>openRestModal(si));
+    setRestCell(tdRest,s.rest);tr.appendChild(tdRest);
+    dates.forEach(d=>{
+      const key=`${si}-${dateKey(d)}`;
+      const td=document.createElement('td');
+      const dc=getDayClass(d);td.className='day-col shift-cell';if(dc)td.classList.add(dc);
+      const val=shiftData[key]||'';
+      applyShiftStyle(td,val);
+      const wrap=document.createElement('div');wrap.className='shift-wrap';
+      const sel=document.createElement('select');sel.className='shift-select';
+      buildOptions().forEach(o=>{
+        const op=document.createElement('option');op.value=o.value;op.textContent=o.label;
+        if(o.value===val)op.selected=true;sel.appendChild(op);
+      });
+      const timeLbl=document.createElement('div');timeLbl.className='shift-time-label';
+      timeLbl.id=`tlbl-${key}`;setTimeLabel(timeLbl,val);
+      sel.addEventListener('change',e=>{
+        const nv=e.target.value;shiftData[key]=nv;
+        applyShiftStyle(td,nv);setTimeLabel(timeLbl,nv);
+        const allDates=getPeriodDates(currentYear,currentMonth);
+        refreshStaffRow(si,allDates);
+        updateTotalRow(allDates);
+        updateSummary(allDates);
+      });
+      wrap.appendChild(sel);wrap.appendChild(timeLbl);td.appendChild(wrap);tr.appendChild(td);
+    });
+    tbody.appendChild(tr);
+    refreshStaffRow(si,dates);
+  });
+
+  // 出勤人数合計行
+  const totRow=document.createElement('tr');totRow.className='total-row';
+  const totL=document.createElement('td');totL.className='col-name';totL.textContent='出勤人数';totRow.appendChild(totL);
+  ['col-zoku','col-role','col-yomikomi','col-kyukei','col-zankyukei','col-soro','col-zangyou','col-rest'].forEach(c=>{
+    const td=document.createElement('td');td.className=c;td.textContent='─';totRow.appendChild(td);
+  });
+  dates.forEach(d=>{
+    const td=document.createElement('td');td.className='day-col';td.id=`total-${dateKey(d)}`;
+    td.textContent=countWork(d);totRow.appendChild(td);
+  });
+  tbody.appendChild(totRow);
+
+  // 役割別集計行
+  ROLES.forEach(role=>{
+    const rRow=document.createElement('tr');rRow.className='role-count-row';
+    const rL=document.createElement('td');rL.className='col-name';
+    rL.innerHTML=`<span style="font-size:0.66rem">▸${role}</span>`;rRow.appendChild(rL);
+    ['col-zoku','col-role','col-yomikomi','col-kyukei','col-zankyukei','col-soro','col-zangyou','col-rest'].forEach(c=>{
+      const td=document.createElement('td');td.className=c;td.textContent='';rRow.appendChild(td);
+    });
+    dates.forEach(d=>{
+      const td=document.createElement('td');td.className='day-col';
+      const cnt=countByRole(d,role);
+      if(cnt>0)td.innerHTML=`<div class="role-count-cell"><span class="rv2">${cnt}</span><span class="ri">${role}</span></div>`;
+      else{td.textContent='─';td.style.color='#2a2e45';}
+      rRow.appendChild(td);
+    });
+    tbody.appendChild(rRow);
+  });
+}
+
+// ===== セル描画ヘルパー =====
+function applyShiftStyle(td,val){
+  const allCls=['s-A','s-B','s-C','s-D','s-E','s-F','s-G','s-H','s-off','s-kibou','s-yuu','s-fuyu','s-natsu'];
+  allCls.forEach(c=>td.classList.remove(c));
+  if(PATTERNS[val])td.classList.add(PATTERNS[val].cls);
+  const ro=REST_OPTIONS.find(r=>r.value===val);if(ro)td.classList.add(ro.cls);
+}
+function setTimeLabel(el,val){
+  const p=PATTERNS[val];el.textContent=p?`${p.in}〜${p.out}`:'';
+}
+// 残公休の基準日数を取得：社員→月間休日マスタ、それ以外→zanBase手動値
+function getZanBase(si){
+  const s=staffList[si];
+  if(s.zoku==='seishain'){
+    return getMonthlyHolidayCount(currentYear,currentMonth);
+  }
+  return s.zanBase??null;
+}
+function setYomikomiCell(td,val){
+  td.innerHTML=`<div class="yomikomi-cell"><span class="yk-val">${val||0}</span><span class="yk-lbl">h/月</span></div>`;
+}
+function setZankyukeiCell(td,si,used){
+  const base=getZanBase(si);
+  const s=staffList[si];
+  const isSeishain=(s.zoku==='seishain');
+  if(base===null){
+    // 非社員でまだ未設定
+    td.title='クリックして残公休の基準日数を設定';
+    td.style.cursor='pointer';
+    td.innerHTML=`<div style="display:flex;flex-direction:column;align-items:center;gap:1px;padding:2px 0;">
+      <span style="font-size:0.62rem;color:#ffb74d;font-weight:700;">未設定</span>
+      <span style="font-size:0.52rem;color:var(--muted)">タップ設定</span></div>`;
+    return;
+  }
+  const zan=base-used;
+  const cls=zan>0?'zankyukei-plus':zan===0?'zankyukei-zero':'zankyukei-minus';
+  const sublabel=isSeishain?'残(自動)':'残(手動)';
+  if(!isSeishain){
+    td.title=`基準${base}日 − 公休${used}日 = ${zan}日\nクリックして基準日数を変更`;
+    td.style.cursor='pointer';
+  } else {
+    td.title=`月間休日${base}日 − 公休${used}日 = ${zan}日`;
+    td.style.cursor='default';
+  }
+  td.innerHTML=`<div style="display:flex;flex-direction:column;align-items:center;gap:1px;padding:2px 0;">
+    <span class="zankyukei-val ${cls}">${zan}</span>
+    <span style="font-size:0.52rem;color:var(--muted)">${sublabel}</span></div>`;
+}
+function setMonoCell(td,val,cls,lbl){
+  td.innerHTML=`<div class="mono-cell"><span class="mv ${cls}">${val}</span><span class="ml">${lbl}</span></div>`;
+}
+function setRestCell(td,rest){
+  td.innerHTML=`<div class="rest-summary">
+    <div class="rest-item-mini"><span class="rl">有給</span><span class="rv rv-yuu">${rest.yuu||0}</span></div>
+    <div class="rest-item-mini"><span class="rl">冬休</span><span class="rv rv-fuy">${rest.fuy||0}</span></div>
+    <div class="rest-item-mini"><span class="rl">夏休</span><span class="rv rv-nat">${rest.nat||0}</span></div>
+    <div class="rest-item-mini"><span class="rl">慶弔</span><span class="rv rv-kei">${rest.kei||0}</span></div></div>`;
+}
+
+// ===== スタッフ行更新 =====
+function refreshStaffRow(si,dates){
+  const{totalWork,totalOver}=calcStaffTotals(si,dates);
+  const kyukei=countKyukei(si,dates);
+  const elK=document.getElementById(`kyukei-${si}`);if(elK)elK.textContent=kyukei;
+  const elZ=document.getElementById(`zankyukei-${si}`);if(elZ)setZankyukeiCell(elZ,si,kyukei);
+  const elS=document.getElementById(`soro-${si}`);if(elS)setMonoCell(elS,fromMins(totalWork),'mv-work','総労働');
+  const elO=document.getElementById(`zangyou-${si}`);
+  if(elO)setMonoCell(elO,fromMins(totalOver),totalOver>0?'mv-over':'mv-minus','実残業');
+}
+function updateTotalRow(dates){
+  dates.forEach(d=>{const el=document.getElementById(`total-${dateKey(d)}`);if(el)el.textContent=countWork(d);});
+}
+// 非表示列をテーブル全体に一括適用（再描画なし・高速）
+function applyHiddenCols(){
+  const dates=getPeriodDates(currentYear,currentMonth);
+  const tbl=document.getElementById('shift-table');
+  dates.forEach((d,colIdx)=>{
+    const dk=dateKey(d);
+    const hidden=isHidden(dk);
+    // thead のヘッダーセル（固定列の数 = 9: name,zoku,role,yomikomi,kyukei,zankyukei,soro,zangyou,rest）
+    const FIXED=9;
+    const thIdx=FIXED+colIdx;
+    // すべての行のその列を更新
+    const rows=tbl.querySelectorAll('tr');
+    rows.forEach(row=>{
+      const cells=row.children;
+      if(cells[thIdx]){
+        if(hidden){
+          cells[thIdx].classList.add('day-col-hidden');
+        } else {
+          cells[thIdx].classList.remove('day-col-hidden');
+        }
+      }
+    });
+    // ヘッダーのtitleとinner更新
+    const thead=document.getElementById('table-head');
+    const ths=thead.querySelectorAll('th');
+    if(ths[thIdx]){
+      const cls=getDayClass(d);
+      ths[thIdx].className=`day-col day-header ${cls}${hidden?' day-col-hidden':''}`;
+      ths[thIdx].title=hidden?`${d.getMonth()+1}/${d.getDate()} クリックで再表示`:`${d.getMonth()+1}/${d.getDate()} クリックで列を非表示`;
+      if(!hidden){
+        const ev=getEvent(d);
+        let inner=`<div class="day-num">${d.getDate()}</div><div class="day-name">${DAYS_JA[d.getDay()]}</div>`;
+        if(ev)inner+=`<span class="event-tag" title="${ev}">${ev}</span>`;
+        ths[thIdx].innerHTML=inner;
+        // クリックイベント再設定
+        ths[thIdx].addEventListener('click',()=>{toggleHidden(dk);applyHiddenCols();});
+      }
+    }
+  });
+  // 非表示件数を凡例に表示
+  const hiddenCount=getHiddenSet().size;
+  const el=document.getElementById('hidden-col-count');
+  if(el)el.textContent=hiddenCount>0?`　非表示列: ${hiddenCount}日（列ヘッダーをクリックで切替）`:'　列ヘッダーをクリックで非表示/再表示';
+}
+function countWork(d){
+  let c=0;staffList.forEach((_,si)=>{if(PATTERNS[shiftData[`${si}-${dateKey(d)}`]])c++;});
+  return c>0?c:'─';
+}
+function countByRole(d,role){
+  let c=0;staffList.forEach((s,si)=>{if(PATTERNS[shiftData[`${si}-${dateKey(d)}`]]&&s.role===role)c++;});
+  return c;
+}
+function updateSummary(dates){
+  let wd=0,od=0;dates.forEach(d=>{const c=getDayClass(d);if(c==='sun'||c==='sat'||c==='hol')od++;else wd++;});
+  let tw=0;staffList.forEach((_,si)=>{tw+=calcStaffTotals(si,dates).totalWork;});
+  document.getElementById('summary-bar').innerHTML=
+    `<span>期間：<strong>${dates.length}日</strong></span>
+     <span>平日：<strong>${wd}日</strong></span>
+     <span>土日祝：<strong>${od}日</strong></span>
+     <span>スタッフ：<strong>${staffList.length}名</strong></span>
+     <span>全スタッフ総労働：<strong>${fromMins(tw)}h</strong></span>`;
+}
+
+// ===== スタッフ追加 =====
+function addStaff(){
+  const name=document.getElementById('newName').value.trim();
+  if(!name){alert('氏名を入力してください');return;}
+  if(staffList.length>=30){alert('最大30名まで');return;}
+  staffList.push({name,zoku:document.getElementById('newZoku').value,role:document.getElementById('newRole').value,yomikomi:0,zanBase:null,rest:{yuu:0,fuy:0,nat:0,kei:0}});
+  document.getElementById('newName').value='';render();
+}
+
+// ===== モーダル =====
+function openEditModal(idx){
+  editIdx=idx;const s=staffList[idx];
+  document.getElementById('edit-name').value=s.name;
+  document.getElementById('edit-zoku').value=s.zoku;
+  document.getElementById('edit-role').value=s.role;
+  document.getElementById('editModal').classList.add('open');
+}
+function saveEditModal(){
+  if(editIdx<0)return;
+  staffList[editIdx]={...staffList[editIdx],
+    name:document.getElementById('edit-name').value.trim()||staffList[editIdx].name,
+    zoku:document.getElementById('edit-zoku').value,
+    role:document.getElementById('edit-role').value};
+  closeModal('editModal');render();
+}
+function deleteStaffModal(){
+  if(editIdx<0)return;
+  if(!confirm(`「${staffList[editIdx].name}」を削除しますか？`))return;
+  const idx=editIdx;
+  const nd={};
+  Object.entries(shiftData).forEach(([k,v])=>{
+    const pts=k.split('-');const si=parseInt(pts[0]);const rest=pts.slice(1).join('-');
+    if(si===idx)return;const nsi=si>idx?si-1:si;nd[`${nsi}-${rest}`]=v;
+  });
+  shiftData=nd;staffList.splice(idx,1);closeModal('editModal');render();
+}
+function openYomikomiModal(idx){
+  ykIdx=idx;
+  document.getElementById('yk-modal-name').textContent=staffList[idx].name;
+  document.getElementById('yk-input').value=staffList[idx].yomikomi||0;
+  document.getElementById('yomikomiModal').classList.add('open');
+}
+function saveYomikomiModal(){
+  if(ykIdx<0)return;
+  staffList[ykIdx].yomikomi=parseFloat(document.getElementById('yk-input').value)||0;
+  const td=document.getElementById(`yk-${ykIdx}`);if(td)setYomikomiCell(td,staffList[ykIdx].yomikomi);
+  closeModal('yomikomiModal');
+}
+// 残公休基準日数モーダル（非社員用）
+function openZanModal(idx){
+  if(staffList[idx].zoku==='seishain')return; // 社員は不可
+  zanIdx=idx;
+  document.getElementById('zan-modal-name').textContent=staffList[idx].name;
+  document.getElementById('zan-input').value=staffList[idx].zanBase??'';
+  document.getElementById('zanModal').classList.add('open');
+}
+function saveZanModal(){
+  if(zanIdx<0)return;
+  const val=parseInt(document.getElementById('zan-input').value);
+  staffList[zanIdx].zanBase=isNaN(val)?null:val;
+  closeModal('zanModal');
+  // 即反映
+  const dates=getPeriodDates(currentYear,currentMonth);
+  refreshStaffRow(zanIdx,dates);
+}
+function openRestModal(idx){
+  restIdx=idx;const r=staffList[idx].rest;
+  document.getElementById('rest-modal-name').textContent=staffList[idx].name;
+  document.getElementById('re-yuu').value=r.yuu||0;document.getElementById('re-fuy').value=r.fuy||0;
+  document.getElementById('re-nat').value=r.nat||0;document.getElementById('re-kei').value=r.kei||0;
+  document.getElementById('restModal').classList.add('open');
+}
+function saveRestModal(){
+  if(restIdx<0)return;
+  staffList[restIdx].rest={
+    yuu:parseInt(document.getElementById('re-yuu').value)||0,
+    fuy:parseInt(document.getElementById('re-fuy').value)||0,
+    nat:parseInt(document.getElementById('re-nat').value)||0,
+    kei:parseInt(document.getElementById('re-kei').value)||0,
+  };
+  const td=document.getElementById(`rest-${restIdx}`);if(td)setRestCell(td,staffList[restIdx].rest);
+  closeModal('restModal');
+}
+function openCalModal(){
+  document.getElementById('cal-img').src=CAL_IMG_SRC;
+  // 現在の月度を表示（11日起算なので表示月は currentMonth+1 月度）
+  // 月度 = 翌月（8/11〜9/10 → 9月度）
+  const dispMonth=currentMonth===11?1:currentMonth+2;
+  document.getElementById('cal-month-num').textContent=dispMonth;
+  const mhc=getMonthlyHolidayCount(currentYear,currentMonth);
+  document.getElementById('cal-month-hol').textContent=mhc!==null?`月間休日 ${mhc}日`:'データなし';
+  document.getElementById('calModal').classList.add('open');
+}
+function closeModal(id){
+  document.getElementById(id).classList.remove('open');
+  editIdx=-1;ykIdx=-1;restIdx=-1;zanIdx=-1;
+}
+['editModal','yomikomiModal','restModal','zanModal','calModal'].forEach(id=>{
+  document.getElementById(id).addEventListener('click',e=>{if(e.target===e.currentTarget)closeModal(id);});
+});
+
+function prevMonth(){if(currentMonth===0){currentMonth=11;currentYear--;}else currentMonth--;render();}
+function nextMonth(){if(currentMonth===11){currentMonth=0;currentYear++;}else currentMonth++;render();}
+
+function exportCSV(){
+  const dates=getPeriodDates(currentYear,currentMonth);
+  const nm=currentMonth===11?0:currentMonth+1,ny=currentMonth===11?currentYear+1:currentYear;
+  let csv='\uFEFF氏名,所属,役割,見込残業(h),公休,残公休,総労働(h:mm),実残業(h:mm),有給,冬休み,夏休み,慶弔,'+
+    dates.map(d=>`${d.getMonth()+1}/${d.getDate()}(${DAYS_JA[d.getDay()]})`).join(',')+'\n';
+  const mhc=getMonthlyHolidayCount(currentYear,currentMonth);
+  staffList.forEach((s,si)=>{
+    const{totalWork,totalOver}=calcStaffTotals(si,dates);
+    const kyukei=countKyukei(si,dates);
+    const base=getZanBase(si);
+    const zan=base!==null?base-kyukei:'─';
+    const zi=ZOKU_INFO[s.zoku]||ZOKU_INFO.arbeit;
+    const row=dates.map(d=>`"${shiftData[`${si}-${dateKey(d)}`]||''}"`);
+    csv+=`"${s.name}","${zi.label}","${s.role}",${s.yomikomi||0},${kyukei},${zan},${fromMins(totalWork)},${fromMins(totalOver)},${s.rest.yuu||0},${s.rest.fuy||0},${s.rest.nat||0},${s.rest.kei||0},${row.join(',')}\n`;
+  });
+  const a=document.createElement('a');
+  a.href=URL.createObjectURL(new Blob([csv],{type:'text/csv;charset=utf-8;'}));
+  const startDay=is7gatsudo(currentYear,currentMonth)?16:11;
+  a.download=`シフト_${currentYear}${String(currentMonth+1).padStart(2,'0')}${startDay}-${ny}${String(nm+1).padStart(2,'0')}10.csv`;
+  a.click();
+}
+
+// ===== スマホ閲覧専用モード =====
+const IS_SP=window.innerWidth<=768;
+if(IS_SP){
+  // 編集系クリックをすべてブロック
+  document.addEventListener('click',e=>{
+    const blocked=['.col-name','.col-zankyukei','.col-yomikomi','.col-rest','.shift-select','.role-select'];
+    if(blocked.some(sel=>e.target.closest&&e.target.closest(sel))){
+      e.stopImmediatePropagation();
+      e.preventDefault();
+    }
+  },true);
+  // 前月・次月ナビは許可（閲覧のため）
+}
+
+render();
+</script>
+</body>
+</html>
