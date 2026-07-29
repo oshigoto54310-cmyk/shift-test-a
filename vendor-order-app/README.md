@@ -80,12 +80,14 @@ vendor-order-app/
 │   │   └── routers/         auth / masters / orders / vendor /
 │   │                        change_requests / histories / dashboard / exports
 │   ├── alembic/             マイグレーション
-│   ├── tests/               自動テスト（51件）
+│   ├── jobs/scheduler.py    締め通知・期限超過通知の定期実行ジョブ
+│   ├── tests/               自動テスト（141件）
 │   └── seed.py              初期テストデータ（架空データ）
 ├── frontend/                スマートフォン対応SPA
 │   ├── index.html
 │   └── static/  api.js / ui.js / app.js / styles.css
-├── docs/                    設計書・マニュアル
+├── docs/                    設計書・監査報告・マニュアル
+├── scripts/                 backup.sh / restore.sh
 ├── Dockerfile
 ├── docker-compose.yml
 ├── nginx.conf               HTTPS終端の設定例
@@ -210,17 +212,25 @@ python -m pytest
 ```
 
 ```
-51 passed
+141 passed
 ```
 
 テストは一時ファイルの SQLite を使うため、開発用DBを壊しません。
+カバレッジは 84%（`python -m pytest --cov=app --cov=jobs`）。
 
-| ファイル | 内容 |
-|---|---|
-| `tests/test_permissions.py` | ベンダー間・店舗間のデータ分離、切替可否、管理画面アクセス、ログインロック、CSRF |
-| `tests/test_orders.py` | 締め前修正、締め後の直接変更拒否、変更申請と承認、数量変更履歴、二重発注警告、二重送信防止、入力チェック、締め時間の優先順位、ベンダー自動振り分け、操作ログ |
-| `tests/test_vendor_responses.py` | 自社発注のみ回答可、一部納品の数量・理由必須、欠品理由必須、代替提案の本部承認、回答履歴の保持 |
-| `tests/test_exports.py` | ベンダー／店舗／本部それぞれの出力スコープ、Excelシート分割、出力形式、出力の操作ログ記録 |
+| ファイル | 件数 | 内容 |
+|---|--:|---|
+| `tests/test_permissions.py` | 15 | ベンダー間・店舗間のデータ分離、切替可否、管理画面アクセス、ログインロック、CSRF |
+| `tests/test_idor.py` | 16 | 全リソースについて、連番IDの直接指定で他社・他店舗に到達できないこと |
+| `tests/test_orders.py` | 17 | 締め前修正、締め後の直接変更拒否、変更申請と承認、数量変更履歴、二重発注警告、二重送信防止、締め時間の優先順位、ベンダー自動振り分け、操作ログ |
+| `tests/test_concurrency.py` | 8 | 楽観ロック、並列確定・並列承認・並列取消の排他、発注番号の同時採番 |
+| `tests/test_transitions.py` | 7 | ベンダー回答後の直接編集・取消の禁止、取消済み・確定済みの再操作禁止 |
+| `tests/test_validation.py` | 17 | 数量・日付・原価の境界値、締め時刻の日付境界（年末・月末・うるう日）、タイムゾーン整合 |
+| `tests/test_auth_session.py` | 11 | ログアウト・パスワード変更・権限変更でのセッション失効、トークン改ざん、平文保存されていないこと |
+| `tests/test_vendor_responses.py` | 10 | 自社発注のみ回答可、一部納品の数量・理由必須、欠品理由必須、代替提案の本部承認、回答履歴の保持 |
+| `tests/test_dashboard.py` | 11 | 集計値の正しさ、スコープ適用、日本時間での当日判定 |
+| `tests/test_notifications.py` | 9 | 締め24時間前・1時間前・回答期限超過の発火、重複抑止、トークン掃除 |
+| `tests/test_exports.py` | 9 | ベンダー／店舗／本部それぞれの出力スコープ、Excelシート分割、出力形式、出力の操作ログ記録 |
 
 ---
 
@@ -319,6 +329,7 @@ gunzip -c ./backups/order_app_YYYYMMDD_HHMM.sql.gz \
 | [docs/manual-user.md](docs/manual-user.md) | 操作マニュアル（店舗担当者・ベンダー担当者向け） |
 | [docs/manual-admin.md](docs/manual-admin.md) | 管理者マニュアル |
 | [docs/security.md](docs/security.md) | セキュリティ上の注意点 |
+| [docs/audit-report.md](docs/audit-report.md) | 第三者監査の結果と是正内容 |
 | [docs/roadmap.md](docs/roadmap.md) | 今後の拡張候補 |
 | [docs/bms.md](docs/bms.md) | 流通BMS対応へ進む場合の追加課題一覧 |
 
@@ -356,10 +367,6 @@ gunzip -c ./backups/order_app_YYYYMMDD_HHMM.sql.gz \
 
 ### 既知の制約
 
-- **締め時間の通知（24時間前・1時間前）はスケジューラ未接続です。**
-  通知の作成処理と重複防止は実装済みですが、定期実行するジョブ（cron / APScheduler など）は
-  設定されていません。現状は発注登録・確定・回答・変更申請といった **操作を起点とした通知のみ**
-  が飛びます。運用前に [docs/roadmap.md](docs/roadmap.md) の手順で定期実行を設定してください。
 - **PDF出力は「印刷用HTML」方式です。** ブラウザの印刷ダイアログから PDF として保存します。
   サーバー側で PDF バイナリを生成していないため、日本語フォントの同梱が不要で環境を選びません。
   バッチでの PDF ファイル生成が必要になった場合は WeasyPrint 等の追加が必要です。
@@ -385,8 +392,8 @@ gunzip -c ./backups/order_app_YYYYMMDD_HHMM.sql.gz \
 
 [docs/roadmap.md](docs/roadmap.md) を参照してください。優先度の高いものは次のとおりです。
 
-1. 締め時間通知の定期実行ジョブ（上記「既知の制約」）
-2. PWA プッシュ通知（通知基盤は拡張しやすい構造にしてあります）
-3. 商品の複数ベンダー対応（`product_vendors` テーブルは作成済み）
-4. 納品実績の登録と検品
+1. PWA プッシュ通知（通知基盤は拡張しやすい構造にしてあります）
+2. 商品の複数ベンダー対応（`product_vendors` テーブルは作成済み）
+3. 納品実績の登録と検品
+4. ログイン試行のレート制限（リバースプロキシ側での実装を推奨）
 5. 流通BMS対応（[docs/bms.md](docs/bms.md)）

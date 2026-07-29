@@ -618,11 +618,27 @@
         });
         if (!ok) return;
         try {
-          await Api.put('/api/orders/' + order.id, { items: items, client_token: Api.newToken() });
+          // version は画面を開いた時点の値。他の担当者が先に更新していればサーバーが409を返す。
+          await Api.put('/api/orders/' + order.id, {
+            items: items, client_token: Api.newToken(), version: order.version,
+          });
           UI.setDirty(false);
           UI.toast('保存しました', 'ok');
           openOrderDetail(order.id);
-        } catch (err) { UI.toast(err.message, 'err'); }
+        } catch (err) {
+          if (err.isConflict) {
+            // 競合は「保存できなかった」ことが確実に伝わるよう、トーストではなく確認画面で出す
+            await UI.confirmDialog({
+              title: '保存できませんでした',
+              desc: err.message,
+              okLabel: '最新の内容を読み込む', cancelLabel: '入力を保持したまま戻る',
+            }).then(function (reload) {
+              if (reload) { UI.setDirty(false); openOrderDetail(order.id); }
+            });
+            return;
+          }
+          UI.toast(err.message, 'err');
+        }
       });
     };
   }

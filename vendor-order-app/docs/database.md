@@ -37,6 +37,7 @@
 | `audit_logs` | 操作ログ | **削除不可** |
 | `login_logs` | ログイン履歴 | **削除不可** |
 | `idempotency_keys` | 二重送信防止トークン | 期限切れは掃除可 |
+| `revoked_tokens` | ログアウト済みトークンの失効リスト | 期限切れは掃除可 |
 
 ---
 
@@ -94,6 +95,7 @@ erDiagram
 | locked_until | datetime | 一時ロックの解除時刻 |
 | password_reset_token | varchar(255) | パスワード再設定トークン |
 | password_reset_expires | datetime | トークン有効期限 |
+| session_version | int | **セッション版数。**トークンに埋め込み、一致しないトークンを無効とする。パスワード変更・権限変更・アカウント停止で +1 |
 | + 監査カラム / deleted_at / deleted_by | | |
 
 **制約**: 管理者・本部には `store_id` / `vendor_id` を割り当てられない。
@@ -197,9 +199,15 @@ erDiagram
 | reply_deadline_at | datetime | ベンダー回答期限（UTC） |
 | note | text | 備考 |
 | confirmed_at / confirmed_by | datetime / int | 発注確定日時・確定者 |
+| version | int | **楽観ロック用。**更新のたびに +1。クライアントが古い値を送ると 409 |
 | + 監査カラム / deleted_at / deleted_by | | |
 
 明細ごとに商品別締めが異なる場合、ヘッダには **最も早い最終締め** を採用する。
+
+`version` は「読んで比較してから書く」のではなく
+`UPDATE orders SET version = version + 1 WHERE id = ? AND version = ?` の
+更新行数で判定する。同じ値を読んだ2つのリクエストが両方通過して
+後勝ちで上書きされるのを防ぐため。
 
 ### order_items（発注明細）
 
@@ -341,6 +349,20 @@ erDiagram
 | ip_address / user_agent | varchar | |
 | created_at | datetime INDEX | |
 
+### revoked_tokens（ログアウト済みトークン）
+
+| カラム | 型 | 内容 |
+|---|---|---|
+| id | int PK | |
+| jti | varchar(64) UNIQUE INDEX | トークンの一意ID |
+| user_id | int INDEX | |
+| expires_at | datetime INDEX | 元トークンの有効期限。過ぎたら削除してよい |
+| revoked_at | datetime | 失効日時 |
+
+JWT はサーバー側に状態を持たないため、Cookie を消すだけでは手元のトークンを使い続けられる。
+ログアウト時に jti を登録して個別に失効させる。
+`users.session_version` がユーザー単位の一括失効、こちらがセッション単位の失効。
+
 ### idempotency_keys（二重送信防止）
 
 | カラム | 型 | 内容 |
@@ -376,6 +398,18 @@ erDiagram
 | `CANCELLED` | 取消 |
 
 ### ステータス遷移
+
+**直接編集・取消の可否**
+
+| ステータス | 締め前の数量直接編集 | 取消 |
+|---|:-:|:-:|
+| 下書き / 発注予定 / 発注確定 / ベンダー未確認 / ベンダー確認済み | ○ | ○ |
+| 一部納品 / 欠品 / 代替提案 / 納品確定 | × （409） | 本部・管理者のみ |
+| 変更申請中 / 変更承認済み / 変更却下 | × （409） | 本部・管理者のみ |
+| 取消 | × | × |
+
+ベンダーが納品可否を回答した後に数量だけ書き換わると回答の前提が崩れるため、
+締め前であっても直接編集させない。
 
 ```mermaid
 stateDiagram-v2

@@ -7,6 +7,8 @@
 ### 認証
 
 ログイン成功時に2つの Cookie が発行されます。
+トークンにはセッション版数（`sv`）とトークンID（`jti`）が含まれ、
+ログアウトで `jti` が、パスワード変更・権限変更で `sv` が失効判定に使われます。
 
 | Cookie | httpOnly | 用途 |
 |---|:-:|---|
@@ -48,7 +50,7 @@
 | 401 | 未認証・セッション期限切れ |
 | 403 | 権限不足・CSRF不正・アカウント停止 |
 | 404 | 対象が存在しない |
-| 409 | 業務ルール上の競合（締め後変更、二重送信など） |
+| 409 | 業務ルール上の競合（締め後変更、二重送信、version不一致、多重確定・多重承認など） |
 | 422 | 入力形式エラー |
 | 423 | ログイン失敗によるロック中 |
 
@@ -93,7 +95,7 @@
 | `GET` | `/api/orders/{id}/editable` | 締め状況と直接編集可否 | 自分の範囲のみ |
 | `POST` | `/api/orders/validate` | 登録前の入力チェック | 管理者・本部・店舗 |
 | `POST` | `/api/orders` | 発注登録（ベンダー別に自動分割） | 管理者・本部・店舗 |
-| `PUT` | `/api/orders/{id}` | 締め前の数量修正 | 管理者・本部・店舗 |
+| `PUT` | `/api/orders/{id}` | 締め前の数量修正（**`version` 必須**） | 管理者・本部・店舗 |
 | `POST` | `/api/orders/{id}/confirm` | 発注確定 | 管理者・本部・店舗 |
 | `POST` | `/api/orders/{id}/cancel` | 発注取消（理由必須） | 管理者・本部・店舗 |
 | `GET` | `/api/orders/helpers/last-order` | 前回発注の内容（コピー入力用） | 管理者・本部・店舗 |
@@ -120,6 +122,22 @@
 商品の担当ベンダーごとに発注が分割されるため、**戻り値は配列**です（201）。
 `client_token` を同じ値で2回送ると 409（二重送信）になります。
 
+**`PUT /api/orders/{id}`**
+
+```json
+{
+  "version": 3,
+  "items": [{ "id": 42, "product_id": 1, "qty_case": 5, "qty_loose": 0, "reason": "売上予測の変更" }]
+}
+```
+
+`version` は必須で、発注を読み込んだ時点の値を送る。
+他の担当者が先に更新していると **409** を返し、静かな上書きを防ぐ。
+画面はこの 409 を確認ダイアログで表示し、最新内容の再読み込みを促す。
+
+以下のステータスでは締め前でも **409** になる（ベンダー回答の前提が崩れるため）:
+一部納品 / 欠品 / 代替提案 / 納品確定 / 変更申請中 / 変更承認済み / 変更却下 / 取消
+
 **`POST /api/orders/validate`** の応答
 
 ```json
@@ -143,6 +161,7 @@
 | `CASE_QTY_MISMATCH` | バラ数がケース入数以上 | WARN |
 | `ORDER_UNIT_MISMATCH` | 発注単位と入力の不整合 | WARN |
 | `DEADLINE_PASSED` | 締め時間超過 | WARN |
+| `DELIVERY_DATE_TOO_FAR` | 納品日が1年より先（年の打ち間違い） | ERROR |
 | `PRODUCT_NOT_YET_VALID` / `PRODUCT_EXPIRED` | 適用期間外 | WARN |
 
 ---
@@ -200,6 +219,12 @@
 | `SHORTAGE` | `shortage_reason` | `SHORTAGE` |
 | `SUBSTITUTE` | `sub_product_name`、`sub_deliverable_qty` | `SUBSTITUTE` |
 | `CHECKING` / `CONSULT` | — | `VENDOR_ACK` |
+
+数量・日付の制約（違反すると 400）:
+
+- `deliverable_qty` / `sub_deliverable_qty` は発注数量を超えられない
+- `next_available_date` / `sub_delivery_date` に過去日は指定できない
+- `sub_cost` に負の値は指定できない（422）
 
 回答を訂正しても過去の回答は残り、最新行のみ `is_latest=true` になります。
 代替提案は本部が `substitute-decision` で承認するまで確定しません。

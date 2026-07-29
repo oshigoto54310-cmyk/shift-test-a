@@ -1,7 +1,7 @@
 """ログイン・ログアウト・パスワード再設定。"""
 from __future__ import annotations
 
-from datetime import timedelta
+from datetime import datetime, timedelta, timezone
 
 from fastapi import APIRouter, Depends, HTTPException, Request, Response, status
 from sqlalchemy.orm import Session, joinedload
@@ -11,7 +11,7 @@ from ..config import settings
 from ..constants import ROLE_LABELS, AuditAction, CROSS_TENANT_ROLES, RoleCode
 from ..database import get_db
 from ..deps import get_current_user
-from ..models import User, utcnow
+from ..models import RevokedToken, User, utcnow
 from ..notify import _send_mail
 from ..schemas import (
     LoginRequest,
@@ -22,6 +22,7 @@ from ..schemas import (
 )
 from ..security import (
     create_access_token,
+    decode_access_token,
     generate_csrf_token,
     generate_reset_token,
     hash_password,
@@ -128,7 +129,7 @@ def login(
     user.last_login_at = now
     db.add(user)
 
-    token = create_access_token(user.id, user.role.code)
+    token = create_access_token(user.id, user.role.code, session_version=user.session_version)
     csrf_token = generate_csrf_token()
     _set_session_cookies(response, token, csrf_token)
 
@@ -146,6 +147,26 @@ def logout(
     db: Session = Depends(get_db),
     user: User = Depends(get_current_user),
 ):
+    # Cookie を消すだけでは、既に手元にあるトークンを使い続けられてしまう。
+    # このトークン（jti）を失効リストへ登録し、サーバー側で無効化する。
+    # 他端末のセッションは残す（一括失効はパスワード変更・権限変更で行う）。
+    token = request.cookies.get(settings.cookie_name)
+    if not token:
+        auth_header = request.headers.get("Authorization", "")
+        token = auth_header[7:].strip() if auth_header.lower().startswith("bearer ") else None
+    payload = decode_access_token(token) if token else None
+    if payload and payload.get("jti"):
+        expires_at = datetime.fromtimestamp(
+            payload.get("exp", 0), tz=timezone.utc
+        ).replace(tzinfo=None)
+        already = (
+            db.query(RevokedToken.id).filter(RevokedToken.jti == payload["jti"]).first()
+        )
+        if not already:
+            db.add(
+                RevokedToken(jti=payload["jti"], user_id=user.id, expires_at=expires_at)
+            )
+
     log_action(db, user, AuditAction.LOGOUT, target_type="user", target_id=user.id, request=request)
     db.commit()
     response.delete_cookie(settings.cookie_name, path="/")
@@ -203,6 +224,8 @@ def password_reset_confirm(
     user.password_reset_expires = None
     user.failed_login_count = 0
     user.locked_until = None
+    # 再設定前に発行されたトークンをすべて失効させる（乗っ取り時の締め出し）
+    user.session_version += 1
     db.add(user)
     log_action(db, user, AuditAction.MASTER_CHANGE, target_type="user_password", target_id=user.id, request=request)
     db.commit()
@@ -213,13 +236,21 @@ def password_reset_confirm(
 def change_password(
     payload: PasswordChange,
     request: Request,
+    response: Response,
     db: Session = Depends(get_db),
     user: User = Depends(get_current_user),
 ):
     if not verify_password(payload.current_password, user.password_hash):
         raise HTTPException(status.HTTP_400_BAD_REQUEST, "現在のパスワードが正しくありません")
     user.password_hash = hash_password(payload.new_password)
+    # 版数を上げて、変更前に発行されたトークン（他端末を含む）を失効させる
+    user.session_version += 1
     db.add(user)
     log_action(db, user, AuditAction.MASTER_CHANGE, target_type="user_password", target_id=user.id, request=request)
     db.commit()
+
+    # 操作した本人だけは続けて使えるよう、新しい版数でトークンを再発行する
+    token = create_access_token(user.id, user.role.code, session_version=user.session_version)
+    csrf_token = generate_csrf_token()
+    _set_session_cookies(response, token, csrf_token)
     return {"message": "パスワードを変更しました"}

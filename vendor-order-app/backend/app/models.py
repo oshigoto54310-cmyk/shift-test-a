@@ -115,6 +115,11 @@ class User(Base, AuditMixin, SoftDeleteMixin):
     locked_until: Mapped[datetime | None] = mapped_column(DateTime)
     password_reset_token: Mapped[str | None] = mapped_column(String(255), index=True)
     password_reset_expires: Mapped[datetime | None] = mapped_column(DateTime)
+    # セッション版数。トークンにこの値を埋め込み、一致しないトークンを無効とする。
+    # パスワード変更・パスワード再設定・権限や所属の変更・アカウント停止で +1 する。
+    # 時刻比較だと JWT の iat が秒単位のため同じ秒に発行されたトークンを取りこぼすが、
+    # 版数なら取りこぼしがない。
+    session_version: Mapped[int] = mapped_column(Integer, default=0, nullable=False)
 
     role: Mapped["Role"] = relationship(back_populates="users")
     store: Mapped["Store | None"] = relationship(back_populates="users")
@@ -234,6 +239,9 @@ class Order(Base, AuditMixin, SoftDeleteMixin):
     note: Mapped[str | None] = mapped_column(Text)
     confirmed_at: Mapped[datetime | None] = mapped_column(DateTime)
     confirmed_by: Mapped[int | None] = mapped_column(Integer)
+    # 楽観ロック用。更新のたびに +1 する。
+    # クライアントが古い version を送ってきたら 409 を返し、静かな上書きを防ぐ。
+    version: Mapped[int] = mapped_column(Integer, default=1, nullable=False)
 
     store: Mapped["Store"] = relationship()
     vendor: Mapped["Vendor"] = relationship()
@@ -462,6 +470,27 @@ class AuditLog(Base):
     ip_address: Mapped[str | None] = mapped_column(String(60))
     user_agent: Mapped[str | None] = mapped_column(String(300))
     created_at: Mapped[datetime] = mapped_column(DateTime, default=utcnow, nullable=False, index=True)
+
+
+class RevokedToken(Base):
+    """ログアウトしたトークンの失効リスト。
+
+    JWT はサーバー側に状態を持たないため、Cookie を消すだけでは
+    既に手元にあるトークンを使い続けられてしまう。
+    ログアウト時に発行済みトークンの jti をここへ記録して個別に失効させる。
+
+    有効期限を過ぎた行は定期ジョブが削除する（残しても意味がないため）。
+    ユーザー単位で一括失効させたい場合（パスワード変更・権限変更）は
+    users.session_version を使う。
+    """
+
+    __tablename__ = "revoked_tokens"
+
+    id: Mapped[int] = mapped_column(primary_key=True)
+    jti: Mapped[str] = mapped_column(String(64), unique=True, nullable=False, index=True)
+    user_id: Mapped[int] = mapped_column(Integer, nullable=False, index=True)
+    expires_at: Mapped[datetime] = mapped_column(DateTime, nullable=False, index=True)
+    revoked_at: Mapped[datetime] = mapped_column(DateTime, default=utcnow, nullable=False)
 
 
 class IdempotencyKey(Base):

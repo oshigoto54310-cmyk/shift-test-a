@@ -146,6 +146,10 @@ def create_response(
     elif rtype == ResponseType.SHORTAGE:
         if not (payload.shortage_reason or "").strip():
             raise HTTPException(status.HTTP_400_BAD_REQUEST, "欠品では欠品理由が必須です")
+        if payload.next_available_date and payload.next_available_date < date.today():
+            raise HTTPException(
+                status.HTTP_400_BAD_REQUEST, "次回納品可能日に過去の日付は指定できません"
+            )
         deliverable = 0
         shortage = item.quantity
     elif rtype == ResponseType.SUBSTITUTE:
@@ -153,7 +157,21 @@ def create_response(
             raise HTTPException(status.HTTP_400_BAD_REQUEST, "代替提案では代替商品名が必須です")
         if payload.sub_deliverable_qty is None:
             raise HTTPException(status.HTTP_400_BAD_REQUEST, "代替提案では納品可能数量が必須です")
+        if payload.sub_delivery_date and payload.sub_delivery_date < date.today():
+            raise HTTPException(
+                status.HTTP_400_BAD_REQUEST, "代替商品の納品可能日に過去の日付は指定できません"
+            )
         deliverable = payload.deliverable_qty or 0
+        if deliverable > item.quantity:
+            raise HTTPException(
+                status.HTTP_400_BAD_REQUEST,
+                f"納品可能数量が発注数量（{item.quantity}）を超えています",
+            )
+        if payload.sub_deliverable_qty > item.quantity:
+            raise HTTPException(
+                status.HTTP_400_BAD_REQUEST,
+                f"代替商品の納品可能数量が発注数量（{item.quantity}）を超えています",
+            )
         shortage = max(item.quantity - deliverable, 0)
 
     # 直前の回答を履歴として残し、最新フラグを付け替える

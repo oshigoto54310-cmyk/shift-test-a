@@ -270,6 +270,9 @@ class OrderUpdate(BaseModel):
     note: str | None = None
     items: list[OrderItemUpdate] = Field(min_length=1)
     client_token: str | None = None
+    # 画面が読み込んだ時点の version。必須。
+    # 他の担当者が先に更新していれば 409 を返し、静かな上書きを防ぐ。
+    version: int = Field(ge=1)
 
 
 class OrderItemOut(ORMModel):
@@ -311,6 +314,7 @@ class OrderOut(ORMModel):
     total_quantity: int = 0
     item_count: int = 0
     items: list[OrderItemOut] = []
+    version: int = 1
     created_at: datetime | None = None
     updated_at: datetime | None = None
 
@@ -367,8 +371,8 @@ class VendorResponseIn(BaseModel):
     sub_product_name: str | None = None
     sub_jan_code: str | None = None
     sub_spec: str | None = None
-    sub_cost: float | None = None
-    sub_deliverable_qty: int | None = Field(default=None, ge=0)
+    sub_cost: float | None = Field(default=None, ge=0)   # 原価に負の値は入れさせない
+    sub_deliverable_qty: int | None = Field(default=None, ge=0, le=999999)
     sub_delivery_date: date | None = None
     sub_comment: str | None = None
     comment: str | None = None

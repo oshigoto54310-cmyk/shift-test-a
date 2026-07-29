@@ -2,6 +2,7 @@
 from __future__ import annotations
 
 import logging
+from contextlib import asynccontextmanager
 from pathlib import Path
 
 from fastapi import FastAPI, Request
@@ -26,12 +27,23 @@ from .routers import (
 logging.basicConfig(level=logging.INFO)
 logger = logging.getLogger(__name__)
 
+
+@asynccontextmanager
+async def lifespan(_: FastAPI):
+    """起動時処理。開発用途ではテーブルを作成する。本番は Alembic を使う。"""
+    if settings.environment != "production":
+        Base.metadata.create_all(bind=engine)
+        logger.info("データベーステーブルを確認しました（開発モード）")
+    yield
+
+
 app = FastAPI(
     title="ベンダー別・発注管理Webアプリ",
     description="スーパー本部・店舗・ベンダー間の発注業務を一元管理する業務用Webアプリ",
     version="1.0.0",
     docs_url="/api/docs",
     openapi_url="/api/openapi.json",
+    lifespan=lifespan,
 )
 
 if settings.cors_origin_list:
@@ -137,11 +149,3 @@ if FRONTEND_DIR.exists():
         if candidate.is_file():
             return FileResponse(str(candidate))
         return FileResponse(str(FRONTEND_DIR / "index.html"))
-
-
-@app.on_event("startup")
-def on_startup():
-    """開発用途では起動時にテーブルを作成する。本番は Alembic を使う。"""
-    if settings.environment != "production":
-        Base.metadata.create_all(bind=engine)
-        logger.info("データベーステーブルを確認しました（開発モード）")

@@ -25,6 +25,8 @@ from ..models import ChangeRequest, Order, OrderItem, User, utcnow
 from ..notify import hq_users, notify_users, store_users, vendor_users
 from ..schemas import ChangeRequestDecision, ChangeRequestIn, ChangeRequestOut
 from ..services import (
+    bump_version,
+    claim_status_transition,
     compute_quantity,
     consume_idempotency_token,
     get_item_for_user,
@@ -187,6 +189,24 @@ def decide_change_request(
         raise HTTPException(status.HTTP_404_NOT_FOUND, "対象の発注が見つかりません")
 
     now = utcnow()
+    decided_status = str(
+        ChangeRequestStatus.APPROVED if payload.approve else ChangeRequestStatus.REJECTED
+    )
+    # 本部担当者が同時に承認しても1人だけを勝たせる。
+    # 上の PENDING 判定だけでは、複数リクエストが同じ PENDING を見て全員通過してしまい、
+    # 承認者・承認履歴・通知が多重に記録される。
+    if not claim_status_transition(
+        db, ChangeRequest, cr.id,
+        from_statuses=[str(ChangeRequestStatus.PENDING)],
+        to_status=decided_status,
+        extra={"approver_id": user.id, "approved_at": now,
+               "reject_reason": (payload.reject_reason or "").strip() or None},
+    ):
+        db.rollback()
+        raise HTTPException(
+            status.HTTP_409_CONFLICT, "この変更申請は既に他の担当者が処理しました。"
+        )
+
     cr.approver_id = user.id
     cr.approved_at = now
 
@@ -239,6 +259,7 @@ def decide_change_request(
 
     db.add(cr)
     recalc_order_status(db, order, user)
+    bump_version(db, order)
     log_action(db, user, action, target_type="change_request", target_id=cr.id,
                detail={"order_no": order.order_no, "判定": "承認" if payload.approve else "却下"},
                request=request)

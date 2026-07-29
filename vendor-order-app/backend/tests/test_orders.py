@@ -22,6 +22,7 @@ def test_締め前は数量を変更できる(store_a):
     assert editable["can_edit_directly"] is True
 
     res = store_a.put(f"/api/orders/{order['id']}", json={
+        "version": order["version"],
         "items": [{"id": item["id"], "product_id": item["product_id"],
                    "qty_case": 5, "qty_loose": 0, "reason": "売上予測の変更"}],
     })
@@ -43,6 +44,7 @@ def test_締め後は直接変更できない(store_a):
     assert editable["requires_change_request"] is True
 
     res = store_a.put(f"/api/orders/{order['id']}", json={
+        "version": order["version"],
         "items": [{"id": item["id"], "product_id": item["product_id"], "qty_case": 99, "qty_loose": 0}],
     })
     assert res.status_code == 409
@@ -132,6 +134,7 @@ def test_数量変更履歴が残る(store_a, hq):
     item = store_a.get(f"/api/orders/{order['id']}").json()["items"][0]
 
     store_a.put(f"/api/orders/{order['id']}", json={
+        "version": order["version"],
         "items": [{"id": item["id"], "product_id": item["product_id"],
                    "qty_case": 6, "qty_loose": 0, "reason": "天候による需要変動"}],
     })

@@ -280,6 +280,9 @@
 | 発注が意図しないベンダーに割り振られた | 商品マスタの担当ベンダーを確認してください |
 | 合計数量が合わない | 商品マスタのケース入数を確認してください |
 | ログインできない | ロック状態を確認し、必要ならロック解除してください |
+| 「他の担当者がこの発注を更新しました」と出る | 2人が同時に同じ発注を編集しています。最新を読み込んでからやり直すよう案内してください |
+| 「この発注は既に他の担当者が確定しました」と出る | 同時操作です。一覧を再読み込みすると確定済みになっています |
+| ベンダー回答後に店舗が数量を直せない | 仕様です。回答の前提が崩れるため、本部が取消して発注し直してください |
 | メール通知が届かない | `.env` の `MAIL_ENABLED` と SMTP 設定を確認。通知履歴で送信結果を確認できます |
 
 ---
@@ -288,22 +291,31 @@
 
 PostgreSQL 運用時の手順です。`./backups` が `db` コンテナにマウントされています。
 
-**バックアップ（cron での定期実行を推奨）**
+**バックアップ**
 
 ```bash
-docker compose exec -T db pg_dump -U order_user order_app \
-  | gzip > ./backups/order_app_$(date +%Y%m%d_%H%M).sql.gz
+./scripts/backup.sh
+```
 
-# 30日より古いものを削除
-find ./backups -name '*.sql.gz' -mtime +30 -delete
+- 出力先は `./backups`（`BACKUP_DIR` で変更可）
+- 30日より古いものは自動削除（`RETENTION_DAYS` で変更可）
+- 中身が空の場合は失敗として扱い、壊れたファイルを残しません
+
+cron での定期実行:
+
+```cron
+30 2 * * * cd /opt/vendor-order-app && ./scripts/backup.sh >> /var/log/order-backup.log 2>&1
 ```
 
 **リストア**
 
 ```bash
-gunzip -c ./backups/order_app_YYYYMMDD_HHMM.sql.gz \
-  | docker compose exec -T db psql -U order_user -d order_app
+./scripts/restore.sh ./backups/order_app_20260729_023000.sql.gz
 ```
+
+- 実行前に確認を求めます（`restore` と入力）
+- **復元前の状態を自動で退避** してから実行します
+- アプリと通知ジョブを停止 → 復元 → マイグレーション適用 → 再起動 まで行います
 
 > バックアップファイルには取引情報が含まれます。保管場所のアクセス権を制限してください。
 
@@ -314,6 +326,7 @@ gunzip -c ./backups/order_app_YYYYMMDD_HHMM.sql.gz \
 | 頻度 | 確認内容 |
 |---|---|
 | 毎日 | ダッシュボードの「回答期限超過」「変更申請」「代替提案」 |
+| 毎日 | 通知ジョブ（`notifier` コンテナ）が動いていること（`docker compose ps`） |
 | 毎週 | 未確定のまま残っている発注、バックアップの取得状況 |
 | 毎月 | 操作ログの確認、退職者アカウントの停止漏れ |
 | 随時 | ログイン失敗回数が多いアカウント（不正アクセスの兆候） |

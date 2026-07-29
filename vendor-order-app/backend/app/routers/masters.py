@@ -568,6 +568,7 @@ def update_user(
     _validate_user_assignment(payload.role_code, payload.store_id, payload.vendor_id)
 
     was_active = target.is_active
+    before_scope = (target.role_id, target.store_id, target.vendor_id)
     target.email = payload.email.lower().strip()
     target.name = payload.name
     target.role_id = role.id
@@ -579,6 +580,14 @@ def update_user(
         target.password_hash = hash_password(payload.password)
         target.failed_login_count = 0
         target.locked_until = None
+    # 権限・所属・パスワードが変わったら発行済みトークンを失効させる。
+    # 参照範囲はロールと所属で決まるため、古いセッションを残すと旧権限で操作できてしまう。
+    if (
+        payload.password
+        or before_scope != (role.id, payload.store_id, payload.vendor_id)
+        or (was_active and not payload.is_active)
+    ):
+        target.session_version += 1
     target.updated_by = user.id
     db.add(target)
 
@@ -625,6 +634,7 @@ def suspend_user(
     target.is_active = False
     target.deleted_at = utcnow()
     target.deleted_by = user.id
+    target.session_version += 1   # 発行済みトークンも失効させる
     db.add(target)
     log_action(db, user, AuditAction.USER_SUSPEND, target_type="user", target_id=target.id,
                detail={"操作": "停止"}, request=request)

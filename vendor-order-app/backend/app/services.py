@@ -4,12 +4,12 @@
 """
 from __future__ import annotations
 
-from datetime import date
+from datetime import date, timedelta
 
 from fastapi import HTTPException, status
 from sqlalchemy import func
 from sqlalchemy.exc import IntegrityError
-from sqlalchemy.orm import Query, Session, joinedload
+from sqlalchemy.orm import Query, Session, joinedload, make_transient
 
 from .config import settings
 from .constants import (
@@ -35,6 +35,9 @@ from .models import (
 )
 from .schemas import OrderItemOut, OrderOut, OrderValidationWarning
 
+# 納品日として受け付ける上限（今日からの日数）。年の打ち間違いを弾くため。
+MAX_DELIVERY_DAYS_AHEAD = 365
+
 
 # --------------------------------------------------------------------------
 # 二重送信防止
@@ -42,17 +45,86 @@ from .schemas import OrderItemOut, OrderOut, OrderValidationWarning
 def consume_idempotency_token(
     db: Session, user: User, token: str | None, endpoint: str
 ) -> None:
-    """同じトークンが2回来たら 409 を返す。トークン未指定なら素通し。"""
+    """同じトークンが2回来たら 409 を返す。トークン未指定なら素通し。
+
+    SAVEPOINT を使うため、衝突しても呼び出し側のトランザクション全体は巻き戻らない。
+    """
     if not token:
         return
-    db.add(IdempotencyKey(token=token[:80], user_id=user.id, endpoint=endpoint))
+    savepoint = db.begin_nested()
     try:
+        db.add(IdempotencyKey(token=token[:80], user_id=user.id, endpoint=endpoint))
         db.flush()
+        savepoint.commit()
     except IntegrityError:
-        db.rollback()
+        savepoint.rollback()
         raise HTTPException(
             status.HTTP_409_CONFLICT, "この操作は既に受け付けています（二重送信）"
         )
+
+
+# --------------------------------------------------------------------------
+# 競合制御
+# --------------------------------------------------------------------------
+def claim_status_transition(
+    db: Session,
+    model,
+    row_id: int,
+    *,
+    from_statuses: list[str],
+    to_status: str,
+    extra: dict | None = None,
+) -> bool:
+    """条件付きUPDATEで状態遷移を「1人だけ」に確定させる。
+
+    「読んで判定してから書く」方式だと、同時に複数のリクエストが同じ判定を通過し、
+    全員が成功してしまう（発注の多重確定・変更申請の多重承認）。
+    UPDATE ... WHERE status IN (...) の更新行数で勝者を決めることで、
+    データベースの行ロックに判定を任せる。
+
+    戻り値: True = 自分が遷移させた / False = 既に他の誰かが遷移させた
+    """
+    values = {"status": to_status}
+    if extra:
+        values.update(extra)
+    updated = (
+        db.query(model)
+        .filter(model.id == row_id, model.status.in_(from_statuses))
+        .update(values, synchronize_session=False)
+    )
+    return bool(updated)
+
+
+def bump_version(db: Session, order: Order) -> None:
+    """発注ヘッダの version を進める（楽観ロック用）。"""
+    db.query(Order).filter(Order.id == order.id).update(
+        {"version": Order.version + 1}, synchronize_session=False
+    )
+
+
+def claim_order_version(db: Session, order: Order, expected: int) -> None:
+    """楽観ロック。version が一致する場合だけ +1 して更新権を取得する。
+
+    「読んで比較してから書く」方式では、2つのリクエストが同じ version を読んだ場合に
+    両方が判定を通過して後勝ちの上書きが起きる。
+    UPDATE ... WHERE version = :expected の更新行数で勝者を決めることで、
+    データベースの行ロックに判定を任せる。
+    この UPDATE は以降の処理が終わるまで行ロックを保持するため、
+    同一発注に対する更新は直列化される。
+    """
+    updated = (
+        db.query(Order)
+        .filter(Order.id == order.id, Order.version == expected)
+        .update({"version": Order.version + 1}, synchronize_session=False)
+    )
+    if not updated:
+        db.rollback()
+        raise HTTPException(
+            status.HTTP_409_CONFLICT,
+            "他の担当者がこの発注を更新しました。"
+            "最新の内容を読み込んでから、もう一度やり直してください。",
+        )
+    order.version = expected + 1
 
 
 # --------------------------------------------------------------------------
@@ -66,11 +138,42 @@ def compute_quantity(case_qty: int, qty_case: int, qty_loose: int) -> int:
 def new_order_no(db: Session, store_code: str, delivery_date: date) -> str:
     prefix = f"{delivery_date:%Y%m%d}-{store_code}"
     count = db.query(func.count(Order.id)).filter(Order.order_no.like(f"{prefix}-%")).scalar() or 0
-    for n in range(count + 1, count + 200):
+    for n in range(count + 1, count + 500):
         candidate = f"{prefix}-{n:03d}"
         if not db.query(Order.id).filter(Order.order_no == candidate).first():
             return candidate
     raise HTTPException(status.HTTP_500_INTERNAL_SERVER_ERROR, "発注番号を採番できませんでした")
+
+
+def insert_order_with_unique_no(
+    db: Session, order: Order, store_code: str, attempts: int = 8
+) -> Order:
+    """発注番号を採番して INSERT する。衝突したら採番からやり直す。
+
+    採番は「既存件数を数えて次の番号を決める」方式のため、同時登録が重なると
+    同じ番号を掴む。UNIQUE 制約で弾かれるのを SAVEPOINT で受け止め、
+    番号を採り直して再試行する（そのまま流すと 500 になる）。
+    """
+    last_error: IntegrityError | None = None
+    for _ in range(attempts):
+        order.order_no = new_order_no(db, store_code, order.delivery_date)
+        savepoint = db.begin_nested()
+        try:
+            db.add(order)
+            db.flush()
+            savepoint.commit()
+            return order
+        except IntegrityError as exc:
+            savepoint.rollback()
+            last_error = exc
+            # SAVEPOINT を巻き戻すとインスタンスはセッションから外れる。
+            # 再び add できるよう transient に戻してから採番し直す。
+            make_transient(order)
+            order.id = None
+    raise HTTPException(
+        status.HTTP_409_CONFLICT,
+        "発注番号の採番が混み合っています。少し時間をおいて再度お試しください。",
+    ) from last_error
 
 
 # --------------------------------------------------------------------------
@@ -297,6 +400,18 @@ def validate_order_items(
             OrderValidationWarning(
                 code="PAST_DELIVERY_DATE",
                 message=f"納品日 {delivery_date:%Y/%m/%d} は過去日です。登録できません。",
+                level="ERROR",
+            )
+        )
+    # 桁誤り・年の打ち間違いを弾く。1年より先の納品日は業務上ありえない。
+    if delivery_date > today + timedelta(days=MAX_DELIVERY_DAYS_AHEAD):
+        warnings.append(
+            OrderValidationWarning(
+                code="DELIVERY_DATE_TOO_FAR",
+                message=(
+                    f"納品日 {delivery_date:%Y/%m/%d} が遠すぎます"
+                    f"（{MAX_DELIVERY_DAYS_AHEAD}日先まで）。日付を確認してください。"
+                ),
                 level="ERROR",
             )
         )

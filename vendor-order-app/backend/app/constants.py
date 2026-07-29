@@ -54,8 +54,35 @@ ORDER_STATUS_LABELS = {
     OrderStatus.CANCELLED: "取消",
 }
 
-# 締め前として数量を直接編集してよいステータス
-EDITABLE_STATUSES = {OrderStatus.DRAFT, OrderStatus.PLANNED, OrderStatus.CONFIRMED}
+# 締め前として数量を直接編集してよいステータス。
+# ベンダーが納品可否を回答した後（一部納品・欠品・代替提案・納品確定）は、
+# 回答の前提が崩れるため締め前であっても直接編集させない。
+EDITABLE_STATUSES = {
+    OrderStatus.DRAFT,
+    OrderStatus.PLANNED,
+    OrderStatus.CONFIRMED,
+    OrderStatus.VENDOR_PENDING,
+    OrderStatus.VENDOR_ACK,
+}
+
+# 取消してよいステータス。納品確定済みは店舗から取消できない。
+CANCELLABLE_STATUSES = {
+    OrderStatus.DRAFT,
+    OrderStatus.PLANNED,
+    OrderStatus.CONFIRMED,
+    OrderStatus.VENDOR_PENDING,
+    OrderStatus.VENDOR_ACK,
+    OrderStatus.SHORTAGE,
+    OrderStatus.CHANGE_REJECTED,
+}
+
+# ベンダーが納品可否を回答済みで、発注内容が確定に向かっているステータス
+VENDOR_ANSWERED_STATUSES = {
+    OrderStatus.PARTIAL,
+    OrderStatus.SHORTAGE,
+    OrderStatus.SUBSTITUTE,
+    OrderStatus.DELIVERED,
+}
 
 # 確定済みとしてベンダーに公開されるステータス
 VENDOR_VISIBLE_STATUSES = {

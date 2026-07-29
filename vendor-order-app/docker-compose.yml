@@ -48,6 +48,31 @@ services:
     ports:
       - "8000:8000"
 
+  # 締め24時間前・1時間前・回答期限超過の通知を発火させる常駐ジョブ。
+  # 重複送信は notifications の UNIQUE 制約で防いでいるため、再起動しても二重に飛ばない。
+  notifier:
+    build:
+      context: .
+      dockerfile: Dockerfile
+    restart: unless-stopped
+    depends_on:
+      db:
+        condition: service_healthy
+      app:
+        condition: service_started
+    environment:
+      DATABASE_URL: postgresql+psycopg://${POSTGRES_USER:-order_user}:${POSTGRES_PASSWORD}@db:5432/${POSTGRES_DB:-order_app}
+      SECRET_KEY: ${SECRET_KEY:?SECRET_KEY を .env に設定してください}
+      ENVIRONMENT: ${ENVIRONMENT:-production}
+      MAIL_ENABLED: ${MAIL_ENABLED:-false}
+      SMTP_HOST: ${SMTP_HOST:-}
+      SMTP_PORT: ${SMTP_PORT:-587}
+      SMTP_USER: ${SMTP_USER:-}
+      SMTP_PASSWORD: ${SMTP_PASSWORD:-}
+      SMTP_FROM: ${SMTP_FROM:-no-reply@example.invalid}
+      TZ: Asia/Tokyo
+    command: ["python", "-m", "jobs.scheduler", "loop"]
+
   # HTTPS 終端。証明書を ./certs に置いてから使う。
   # 開発時は不要なので profiles で切り離している。
   #   docker compose --profile https up -d

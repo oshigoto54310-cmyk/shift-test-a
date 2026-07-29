@@ -34,14 +34,27 @@ def verify_password(password: str, password_hash: str) -> bool:
         return False
 
 
-def create_access_token(user_id: int, role_code: str, extra: dict | None = None) -> str:
+def create_access_token(
+    user_id: int,
+    role_code: str,
+    extra: dict | None = None,
+    *,
+    session_version: int = 0,
+) -> str:
+    """セッショントークンを発行する。
+
+    session_version（sv クレーム）はユーザー単位の一括失効に使う。
+    パスワード変更や権限変更で版数を上げると、それ以前のトークンは
+    版数が一致せず無効になる。時刻を使わないため取りこぼしが起きない。
+    """
     now = datetime.now(timezone.utc)
     payload = {
         "sub": str(user_id),
         "role": role_code,
+        "sv": session_version,
         "iat": int(now.timestamp()),
         "exp": int((now + timedelta(minutes=settings.session_minutes)).timestamp()),
-        "jti": secrets.token_urlsafe(8),
+        "jti": secrets.token_urlsafe(16),
     }
     if extra:
         payload.update(extra)

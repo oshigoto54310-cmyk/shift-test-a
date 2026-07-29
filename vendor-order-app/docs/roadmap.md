@@ -1,89 +1,25 @@
 # 今後の拡張候補
 
-優先度順に記載します。「◎ 必須」は運用開始前に対応すべきものです。
+優先度順に記載します。監査で指摘された必須項目は是正済みです（下記「実装済み」）。
 
 ---
 
-## ◎ 1. 締め時間通知の定期実行（運用開始前に必要）
+## 実装済み（第三者監査での是正）
 
-### 現状
+以下は当初「今後の課題」としていましたが、監査を受けて実装済みです。
 
-通知の作成処理・重複防止・送信履歴は実装済みですが、
-**時刻を起点とする通知（締め24時間前・1時間前、回答期限超過）を発火する
-定期実行ジョブが未接続** です。現在は「発注登録」「確定」「回答」「変更申請」といった
-**操作を起点とした通知のみ** が飛びます。
+| 項目 | 実装 |
+|---|---|
+| 締め通知の定期実行 | `backend/jobs/scheduler.py`。docker compose の `notifier` サービスで常駐 |
+| 冪等トークン・失効トークンの掃除 | 同ジョブが毎周期で実行 |
+| 楽観ロック | `orders.version` |
+| 多重確定・多重承認の防止 | 条件付きUPDATEによる排他 |
+| ログアウト時のセッション失効 | `revoked_tokens` |
 
-### 実装方法
-
-`app/notify.py` の `notify_users()` をそのまま使えます。次のようなバッチを作成し、
-15分間隔で実行してください。`dedup_key` により重複送信は自動的に防がれます。
-
-```python
-# backend/jobs/deadline_notifier.py
-from datetime import timedelta
-from app.database import SessionLocal
-from app.constants import NotificationType, OrderStatus
-from app.models import Order, utcnow
-from app.notify import notify_users, order_stakeholders, vendor_users, hq_users
-
-def run():
-    db = SessionLocal()
-    now = utcnow()
-    try:
-        for hours, ntype, label in [(24, NotificationType.DEADLINE_24H, "24時間"),
-                                    (1, NotificationType.DEADLINE_1H, "1時間")]:
-            target = now + timedelta(hours=hours)
-            orders = db.query(Order).filter(
-                Order.deleted_at.is_(None),
-                Order.status.notin_([str(OrderStatus.CANCELLED)]),
-                Order.deadline_at > now,
-                Order.deadline_at <= target,
-            ).all()
-            for o in orders:
-                notify_users(
-                    db, order_stakeholders(db, o), notification_type=ntype,
-                    title=f"締め{label}前 {o.order_no}",
-                    body=f"納品日 {o.delivery_date:%Y/%m/%d} の締め時間が近づいています。",
-                    dedup_key=f"deadline_{hours}h:{o.id}", order_id=o.id,
-                )
-
-        # 回答期限超過
-        overdue = db.query(Order).filter(
-            Order.deleted_at.is_(None),
-            Order.status == str(OrderStatus.VENDOR_PENDING),
-            Order.reply_deadline_at.isnot(None),
-            Order.reply_deadline_at < now,
-        ).all()
-        for o in overdue:
-            notify_users(
-                db, vendor_users(db, o.vendor_id) + hq_users(db),
-                notification_type=NotificationType.VENDOR_REPLY_OVERDUE,
-                title=f"回答期限超過 {o.order_no}",
-                body="ベンダー回答期限を過ぎています。至急ご確認ください。",
-                dedup_key=f"reply_overdue:{o.id}", order_id=o.id,
-            )
-        db.commit()
-    finally:
-        db.close()
-
-if __name__ == "__main__":
-    run()
-```
-
-**cron で実行する場合**
+定期ジョブは cron からも実行できます。
 
 ```cron
-*/15 * * * * cd /app/backend && python -m jobs.deadline_notifier >> /var/log/notifier.log 2>&1
-```
-
-**docker compose にサービスを追加する場合**
-
-```yaml
-  notifier:
-    build: { context: ., dockerfile: Dockerfile }
-    depends_on: { db: { condition: service_healthy } }
-    environment: *app_env
-    command: sh -c "while true; do python -m jobs.deadline_notifier; sleep 900; done"
+*/15 * * * * cd /opt/vendor-order-app/backend && python -m jobs.scheduler once >> /var/log/notifier.log 2>&1
 ```
 
 > 複数インスタンスで動かす場合は排他制御（DBの advisory lock 等）を入れてください。
@@ -91,19 +27,17 @@ if __name__ == "__main__":
 
 ---
 
-## ◎ 2. 冪等トークンの掃除
+## 未実装の課題
 
-`idempotency_keys` は増え続けます。定期的に古い行を削除してください。
+### 0. ログイン試行のレート制限（優先度高）
 
-```sql
-DELETE FROM idempotency_keys WHERE created_at < NOW() - INTERVAL '7 days';
-```
-
-上記の定期実行ジョブに含めるのが簡単です。
+アカウント単位のロックはありますが、IPアドレス単位のレート制限はありません。
+リバースプロキシ側での対策を推奨します。詳細は
+[docs/security.md](security.md) の「現時点の制約と残課題」を参照してください。
 
 ---
 
-## 3. PWA プッシュ通知
+## 1. PWA プッシュ通知
 
 通知基盤は拡張しやすい構造にしてあります。
 
@@ -118,7 +52,7 @@ DELETE FROM idempotency_keys WHERE created_at < NOW() - INTERVAL '7 days';
 
 ---
 
-## 4. 商品の複数ベンダー対応
+## 2. 商品の複数ベンダー対応
 
 `product_vendors` テーブルは作成済みで、主ベンダーが `is_primary=true` で1件入っています。
 
@@ -132,7 +66,7 @@ DELETE FROM idempotency_keys WHERE created_at < NOW() - INTERVAL '7 days';
 
 ---
 
-## 5. 納品実績の登録と検品
+## 3. 納品実績の登録と検品
 
 現在は「発注 → ベンダー回答」までで、実際に何が納品されたかは記録していません。
 
@@ -144,7 +78,7 @@ DELETE FROM idempotency_keys WHERE created_at < NOW() - INTERVAL '7 days';
 
 ---
 
-## 6. 発注テンプレート・定番発注
+## 4. 発注テンプレート・定番発注
 
 曜日ごとの定番発注をテンプレート化し、ワンタップで発注できるようにします。
 
@@ -153,7 +87,7 @@ DELETE FROM idempotency_keys WHERE created_at < NOW() - INTERVAL '7 days';
 
 ---
 
-## 7. 発注実績の分析
+## 5. 発注実績の分析
 
 - 商品別・店舗別・期間別の発注推移グラフ
 - 欠品率・回答遅延率のベンダー評価
@@ -161,7 +95,7 @@ DELETE FROM idempotency_keys WHERE created_at < NOW() - INTERVAL '7 days';
 
 ---
 
-## 8. 締め時間の柔軟化
+## 6. 締め時間の柔軟化
 
 現在は「納品日の何日前・何時」という指定のみです。
 
@@ -171,7 +105,7 @@ DELETE FROM idempotency_keys WHERE created_at < NOW() - INTERVAL '7 days';
 
 ---
 
-## 9. 操作性の改善
+## 7. 操作性の改善
 
 | 項目 | 内容 |
 |---|---|
@@ -182,7 +116,7 @@ DELETE FROM idempotency_keys WHERE created_at < NOW() - INTERVAL '7 days';
 
 ---
 
-## 10. リアルタイム性の強化
+## 8. リアルタイム性の強化
 
 現在は20秒間隔のポーリングです。同時利用者が増えた場合、
 WebSocket または Server-Sent Events への移行を検討してください。
@@ -192,7 +126,7 @@ FastAPI は WebSocket に対応しているため、`/api/ws` を追加し、
 
 ---
 
-## 11. フロントエンドの Next.js 化
+## 9. フロントエンドの Next.js 化
 
 現在のフロントエンドはビルド不要の SPA です。
 バックエンドは REST API のみを提供しているため、**API の変更なしに置き換えられます。**
@@ -206,7 +140,7 @@ FastAPI は WebSocket に対応しているため、`/api/ws` を追加し、
 
 ---
 
-## 12. 運用支援
+## 10. 運用支援
 
 | 項目 | 内容 |
 |---|---|
@@ -217,6 +151,6 @@ FastAPI は WebSocket に対応しているため、`/api/ws` を追加し、
 
 ---
 
-## 13. 流通BMS対応
+## 11. 流通BMS対応
 
 [docs/bms.md](bms.md) を参照してください。

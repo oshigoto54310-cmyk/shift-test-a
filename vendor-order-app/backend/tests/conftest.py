@@ -96,10 +96,14 @@ def _build_fixture_data() -> None:
         user("admin@test.invalid", "管理者", RoleCode.ADMIN)
         user("hq@test.invalid", "本部担当", RoleCode.HQ)
         user("storea@test.invalid", "店舗A担当", RoleCode.STORE, store=store_a)
+        user("storea2@test.invalid", "店舗A担当2", RoleCode.STORE, store=store_a)
         user("storeb@test.invalid", "店舗B担当", RoleCode.STORE, store=store_b)
         user("vendora@test.invalid", "ベンダーA担当", RoleCode.VENDOR, vendor=vendor_a)
         user("vendorb@test.invalid", "ベンダーB担当", RoleCode.VENDOR, vendor=vendor_b)
         user("locked@test.invalid", "ロック確認用", RoleCode.STORE, store=store_a)
+        # セッション失効テスト用（テストごとに使い捨てる）
+        for suffix in "abcdefgh":
+            user(f"session{suffix}@test.invalid", f"セッション確認{suffix}", RoleCode.STORE, store=store_a)
         db.flush()
 
         # 締め時間: システム標準のみ（納品日前日12:00）

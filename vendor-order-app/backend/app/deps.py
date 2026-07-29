@@ -11,14 +11,13 @@
 from __future__ import annotations
 
 from dataclasses import dataclass
-
 from fastapi import Depends, HTTPException, Request, status
 from sqlalchemy.orm import Session, joinedload
 
 from .config import settings
 from .constants import CROSS_TENANT_ROLES, RoleCode
 from .database import get_db
-from .models import User
+from .models import RevokedToken, User
 from .security import csrf_tokens_match, decode_access_token
 
 CSRF_EXEMPT_PATHS = {"/api/auth/login", "/api/auth/password-reset/request", "/api/auth/password-reset/confirm"}
@@ -67,6 +66,18 @@ def get_current_user(request: Request, db: Session = Depends(get_db)) -> User:
         raise _unauthorized()
     if not user.is_active:
         raise forbidden("このアカウントは停止されています")
+
+    # --- セッション失効の判定 ---
+    # (1) ログアウトしたトークンを個別に失効させる。
+    #     iat は秒単位なので、時刻比較だけではログアウトと同じ秒に発行された
+    #     トークンを取りこぼす。jti で一意に判定する。
+    jti = payload.get("jti")
+    if jti and db.query(RevokedToken.id).filter(RevokedToken.jti == jti).first():
+        raise _unauthorized("ログアウト済みのセッションです。再度ログインしてください。")
+
+    # (2) パスワード変更・権限変更では、版数を上げて全セッションを一括失効させる。
+    if payload.get("sv") != user.session_version:
+        raise _unauthorized("セッションは無効化されています。再度ログインしてください。")
 
     # CSRF: 更新系メソッドは Cookie と ヘッダのトークン一致を必須とする
     if request.method in UNSAFE_METHODS and request.url.path not in CSRF_EXEMPT_PATHS:

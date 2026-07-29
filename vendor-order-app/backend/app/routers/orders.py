@@ -16,7 +16,9 @@ from sqlalchemy.orm import Session, joinedload
 
 from ..audit import log_action
 from ..constants import (
+    CANCELLABLE_STATUSES,
     EDITABLE_STATUSES,
+    ORDER_STATUS_LABELS,
     AuditAction,
     NotificationType,
     OrderStatus,
@@ -38,15 +40,18 @@ from ..schemas import (
 from ..services import (
     apply_deadlines,
     assert_before_deadline,
+    claim_order_version,
+    claim_status_transition,
     compute_quantity,
     consume_idempotency_token,
     get_order_for_user,
     has_blocking,
+    insert_order_with_unique_no,
     is_after_deadline,
     latest_response_map,
-    new_order_no,
     order_to_out,
     record_quantity_change,
+    record_status,
     scoped_order_query,
     set_item_status,
     set_order_status,
@@ -223,7 +228,6 @@ def create_order(
             raise HTTPException(status.HTTP_400_BAD_REQUEST, "担当ベンダーが見つかりません")
 
         order = Order(
-            order_no=new_order_no(db, store.code, payload.delivery_date),
             store_id=store_id,
             vendor_id=vendor_id,
             delivery_date=payload.delivery_date,
@@ -236,8 +240,7 @@ def create_order(
         if payload.confirm:
             order.confirmed_at = utcnow()
             order.confirmed_by = user.id
-        db.add(order)
-        db.flush()
+        insert_order_with_unique_no(db, order, store.code)
 
         item_status = str(OrderStatus.VENDOR_PENDING if payload.confirm else OrderStatus.DRAFT)
         for line, product in lines:
@@ -344,11 +347,22 @@ def update_order(
 
     if user.role.code == RoleCode.VENDOR:
         raise forbidden("ベンダーユーザーは発注内容を変更できません")
-    if order.status in {str(OrderStatus.CANCELLED)}:
+    if order.status == str(OrderStatus.CANCELLED):
         raise HTTPException(status.HTTP_409_CONFLICT, "取消済みの発注は変更できません")
+
+    # ベンダーが納品可否を回答した後は、締め前でも直接編集させない。
+    # 数量だけ書き換わると回答（一部納品・欠品・代替提案・納品確定）の前提が崩れるため。
+    if order.status not in {str(s) for s in EDITABLE_STATUSES}:
+        raise HTTPException(
+            status.HTTP_409_CONFLICT,
+            f"この発注は「{ORDER_STATUS_LABELS.get(OrderStatus(order.status), order.status)}」の状態のため"
+            "直接変更できません。本部にご相談ください。",
+        )
 
     # 締め後は直接上書きさせない
     assert_before_deadline(order)
+    # 楽観ロックを先に取得する。以降の処理はこの発注に対して直列化される。
+    claim_order_version(db, order, payload.version)
     consume_idempotency_token(db, user, payload.client_token, f"update_order:{order_id}")
 
     existing = {i.id: i for i in order.items if i.deleted_at is None}
@@ -492,11 +506,27 @@ def confirm_order(
     if all(i.quantity == 0 for i in live_items):
         raise HTTPException(status.HTTP_400_BAD_REQUEST, "数量がすべて0です")
 
-    set_order_status(db, order, str(OrderStatus.CONFIRMED), user, note="発注確定")
-    order.confirmed_at = utcnow()
+    # 同時確定は1人だけを勝たせる。上の判定だけでは、複数リクエストが
+    # 同じ DRAFT を見て全員通過してしまう。
+    now = utcnow()
+    claimed = claim_status_transition(
+        db, Order, order.id,
+        from_statuses=[str(OrderStatus.DRAFT), str(OrderStatus.PLANNED)],
+        to_status=str(OrderStatus.CONFIRMED),
+        extra={"confirmed_at": now, "confirmed_by": user.id, "updated_by": user.id,
+               "version": Order.version + 1},
+    )
+    if not claimed:
+        db.rollback()
+        raise HTTPException(
+            status.HTTP_409_CONFLICT, "この発注は既に他の担当者が確定しました。"
+        )
+
+    previous_status = order.status
+    order.status = str(OrderStatus.CONFIRMED)
+    order.confirmed_at = now
     order.confirmed_by = user.id
-    order.updated_by = user.id
-    db.add(order)
+    record_status(db, order, previous_status, str(OrderStatus.CONFIRMED), user, note="発注確定")
     for item in live_items:
         set_item_status(db, order, item, str(OrderStatus.VENDOR_PENDING), user, note="発注確定")
 
@@ -534,6 +564,29 @@ def cancel_order(
             status.HTTP_409_CONFLICT,
             "締め後の取消は本部承認が必要です。変更申請から依頼してください。",
         )
+    # 納品確定済みなどの取消は本部・管理者の判断に限る（店舗からは取消させない）
+    if (
+        order.status not in {str(s) for s in CANCELLABLE_STATUSES}
+        and user.role.code == RoleCode.STORE
+    ):
+        raise HTTPException(
+            status.HTTP_409_CONFLICT,
+            f"この発注は「{ORDER_STATUS_LABELS.get(OrderStatus(order.status), order.status)}」"
+            "のため店舗からは取消できません。本部にご相談ください。",
+        )
+
+    # 同時取消も1人だけを勝たせる
+    cancellable_from = [
+        str(s) for s in OrderStatus if str(s) != str(OrderStatus.CANCELLED)
+    ]
+    if not claim_status_transition(
+        db, Order, order.id,
+        from_statuses=cancellable_from,
+        to_status=str(OrderStatus.CANCELLED),
+        extra={"updated_by": user.id, "version": Order.version + 1},
+    ):
+        db.rollback()
+        raise HTTPException(status.HTTP_409_CONFLICT, "この発注は既に取消されています。")
 
     for item in [i for i in order.items if i.deleted_at is None]:
         before = (item.qty_case, item.qty_loose, item.quantity)
