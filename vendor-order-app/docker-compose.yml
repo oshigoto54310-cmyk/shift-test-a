@@ -1,0 +1,93 @@
+services:
+  db:
+    image: postgres:16-alpine
+    restart: unless-stopped
+    environment:
+      POSTGRES_DB: ${POSTGRES_DB:-order_app}
+      POSTGRES_USER: ${POSTGRES_USER:-order_user}
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:?POSTGRES_PASSWORD を .env に設定してください}
+      TZ: Asia/Tokyo
+    volumes:
+      - db_data:/var/lib/postgresql/data
+      # 定期バックアップの出力先（cron 等から pg_dump を実行する想定）
+      - ./backups:/backups
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U ${POSTGRES_USER:-order_user} -d ${POSTGRES_DB:-order_app}"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+    # 既定では外部公開しない。ローカルから直接繋ぎたい場合のみ下の行を有効にする。
+    # ports:
+    #   - "127.0.0.1:5432:5432"
+
+  app:
+    build:
+      context: .
+      dockerfile: Dockerfile
+    restart: unless-stopped
+    depends_on:
+      db:
+        condition: service_healthy
+    environment:
+      DATABASE_URL: postgresql+psycopg://${POSTGRES_USER:-order_user}:${POSTGRES_PASSWORD}@db:5432/${POSTGRES_DB:-order_app}
+      SECRET_KEY: ${SECRET_KEY:?SECRET_KEY を .env に設定してください}
+      ENVIRONMENT: ${ENVIRONMENT:-production}
+      COOKIE_SECURE: ${COOKIE_SECURE:-true}
+      SESSION_MINUTES: ${SESSION_MINUTES:-480}
+      MAIL_ENABLED: ${MAIL_ENABLED:-false}
+      SMTP_HOST: ${SMTP_HOST:-}
+      SMTP_PORT: ${SMTP_PORT:-587}
+      SMTP_USER: ${SMTP_USER:-}
+      SMTP_PASSWORD: ${SMTP_PASSWORD:-}
+      SMTP_FROM: ${SMTP_FROM:-no-reply@example.invalid}
+      TZ: Asia/Tokyo
+    # 初回起動時にマイグレーションを適用してからサーバーを起動する
+    command: >
+      sh -c "alembic upgrade head &&
+             uvicorn app.main:app --host 0.0.0.0 --port 8000 --proxy-headers"
+    ports:
+      - "8000:8000"
+
+  # 締め24時間前・1時間前・回答期限超過の通知を発火させる常駐ジョブ。
+  # 重複送信は notifications の UNIQUE 制約で防いでいるため、再起動しても二重に飛ばない。
+  notifier:
+    build:
+      context: .
+      dockerfile: Dockerfile
+    restart: unless-stopped
+    depends_on:
+      db:
+        condition: service_healthy
+      app:
+        condition: service_started
+    environment:
+      DATABASE_URL: postgresql+psycopg://${POSTGRES_USER:-order_user}:${POSTGRES_PASSWORD}@db:5432/${POSTGRES_DB:-order_app}
+      SECRET_KEY: ${SECRET_KEY:?SECRET_KEY を .env に設定してください}
+      ENVIRONMENT: ${ENVIRONMENT:-production}
+      MAIL_ENABLED: ${MAIL_ENABLED:-false}
+      SMTP_HOST: ${SMTP_HOST:-}
+      SMTP_PORT: ${SMTP_PORT:-587}
+      SMTP_USER: ${SMTP_USER:-}
+      SMTP_PASSWORD: ${SMTP_PASSWORD:-}
+      SMTP_FROM: ${SMTP_FROM:-no-reply@example.invalid}
+      TZ: Asia/Tokyo
+    command: ["python", "-m", "jobs.scheduler", "loop"]
+
+  # HTTPS 終端。証明書を ./certs に置いてから使う。
+  # 開発時は不要なので profiles で切り離している。
+  #   docker compose --profile https up -d
+  proxy:
+    image: nginx:alpine
+    restart: unless-stopped
+    profiles: ["https"]
+    depends_on:
+      - app
+    ports:
+      - "80:80"
+      - "443:443"
+    volumes:
+      - ./nginx.conf:/etc/nginx/conf.d/default.conf:ro
+      - ./certs:/etc/nginx/certs:ro
+
+volumes:
+  db_data:
