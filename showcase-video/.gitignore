@@ -13,3 +13,4 @@ out/*
 
 # 音は scripts/make-audio.mjs で毎回同じものを再生成できるので入れない
 public/soundtrack.wav
+public/hook.wav
