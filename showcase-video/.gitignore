@@ -1,0 +1,15 @@
+node_modules
+dist
+build
+.DS_Store
+.env
+
+# フォント（約23MB）はリポジトリに入れない。scripts/fetch-fonts.sh で取得する。
+public/fonts/*.ttf
+
+# 書き出した動画は out/showcase.mp4 だけ残す
+out/*
+!out/showcase.mp4
+
+# 音は scripts/make-audio.mjs で毎回同じものを再生成できるので入れない
+public/soundtrack.wav
